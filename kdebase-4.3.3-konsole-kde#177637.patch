@@ -1,0 +1,97 @@
+Index: apps/konsole/src/MainWindow.h
+===================================================================
+--- apps/konsole/src/MainWindow.h	(revision 1033652)
++++ apps/konsole/src/MainWindow.h	(revision 1033653)
+@@ -112,6 +112,17 @@
+                                ViewManager* view);
+ 
+         /**
++         * Emitted by the main window to request the creation of a new SSH session.
++         *
++         * @param profile The profile to use to create the new session.
++         * @param URL URL for the new session
++         * @param view The view manager owned by this main window
++         */
++        void newSSHSessionRequest(Profile::Ptr profile,
++                                  const KUrl& url,
++                                  ViewManager* view);
++
++        /**
+          * Emitted by the main window to request the creation of a 
+          * new session in a new window.
+          *
+Index: apps/konsole/src/Application.h
+===================================================================
+--- apps/konsole/src/Application.h	(revision 1033652)
++++ apps/konsole/src/Application.h	(revision 1033653)
+@@ -71,6 +71,7 @@
+ 
+ private slots:
+     Session* createSession(Profile::Ptr profile, const QString& directory , ViewManager* view);
++    Session* createSSHSession(Profile::Ptr profile, const KUrl& url, ViewManager* view);
+     void createWindow(Profile::Ptr profile , const QString& directory);
+     void detachView(Session* session);
+ 
+Index: apps/konsole/src/Application.cpp
+===================================================================
+--- apps/konsole/src/Application.cpp	(revision 1033652)
++++ apps/konsole/src/Application.cpp	(revision 1033653)
+@@ -79,6 +79,8 @@
+ 
+     connect( window , SIGNAL(newSessionRequest(Profile::Ptr,const QString&,ViewManager*)), 
+                       this , SLOT(createSession(Profile::Ptr,const QString&,ViewManager*)));
++    connect( window , SIGNAL(newSSHSessionRequest(Profile::Ptr,const KUrl&,ViewManager*)),
++                      this , SLOT(createSSHSession(Profile::Ptr,const KUrl&,ViewManager*)));
+     connect( window , SIGNAL(newWindowRequest(Profile::Ptr,const QString&)),
+                       this , SLOT(createWindow(Profile::Ptr,const QString&)) );
+     connect( window->viewManager() , SIGNAL(viewDetached(Session*)) , this , SLOT(detachView(Session*)) );
+@@ -320,5 +322,30 @@
+     return session;
+ }
+ 
++Session* Application::createSSHSession(Profile::Ptr profile, const KUrl& url, ViewManager* view)
++{
++    if (!profile)
++        profile = SessionManager::instance()->defaultProfile();
++
++    Session* session = SessionManager::instance()->createSession(profile);
++
++    session->sendText("ssh ");
++
++    if ( url.port() > -1 )
++        session->sendText("-p " + QString::number(url.port()) + ' ' );
++    if ( url.hasUser() )
++        session->sendText(url.user() + '@');
++    if ( url.hasHost() )
++        session->sendText(url.host() + '\r');
++
++    // create view before starting the session process so that the session doesn't suffer
++    // a change in terminal size right after the session starts.  some applications such as GNU Screen
++    // and Midnight Commander don't like this happening
++    view->createView(session);
++    session->run();
++
++    return session;
++}
++
+ #include "Application.moc"
+ 
+Index: apps/konsole/src/MainWindow.cpp
+===================================================================
+--- apps/konsole/src/MainWindow.cpp	(revision 1033652)
++++ apps/konsole/src/MainWindow.cpp	(revision 1033653)
+@@ -333,11 +333,13 @@
+ 
+ void MainWindow::openUrls(const QList<KUrl>& urls)
+ {
+-    // TODO Implement support for SSH bookmarks here
+     foreach( const KUrl& url , urls )
+     {
+         if ( url.isLocalFile() )
+             emit newSessionRequest( _defaultProfile , url.path() , _viewManager );
++
++        else if ( url.protocol() == "ssh" )
++            emit newSSHSessionRequest( _defaultProfile , url , _viewManager );
+     }
+ }
+ 

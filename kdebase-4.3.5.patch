@@ -1,0 +1,2997 @@
+diff -Nur kdebase-4.3.4/apps/dolphin/src/dolphindetailsview.cpp kdebase-4.3.5/apps/dolphin/src/dolphindetailsview.cpp
+--- kdebase-4.3.4/apps/dolphin/src/dolphindetailsview.cpp	2009-10-30 13:28:18.000000000 +0100
++++ kdebase-4.3.5/apps/dolphin/src/dolphindetailsview.cpp	2010-01-21 21:47:55.000000000 +0100
+@@ -165,6 +165,21 @@
+ {
+ }
+ 
++QRegion DolphinDetailsView::visualRegionForSelection(const QItemSelection& selection) const
++{
++    // We have to make sure that the visualRect of each model index is inside the region.
++    // QTreeView::visualRegionForSelection does not do it right because it assumes implicitly
++    // that all visualRects have the same width, which is in general not the case here.
++    QRegion selectionRegion;
++    const QModelIndexList indexes = selection.indexes();
++
++    foreach(const QModelIndex& index, indexes) {
++        selectionRegion += visualRect(index);
++    }
++
++    return selectionRegion;
++}
++
+ bool DolphinDetailsView::event(QEvent* event)
+ {
+     if (event->type() == QEvent::Polish) {
+@@ -456,10 +471,22 @@
+     // the blank portion of the name column counts as empty space
+     const QModelIndex index = QTreeView::indexAt(point);
+     const bool isAboveEmptySpace  = !m_useDefaultIndexAt &&
+-                                    (index.column() == KDirModel::Name) && !nameColumnRect(index).contains(point);
++                                    (index.column() == KDirModel::Name) && !visualRect(index).contains(point);
+     return isAboveEmptySpace ? QModelIndex() : index;
+ }
+ 
++QRect DolphinDetailsView::visualRect(const QModelIndex& index) const
++{
++    QRect rect = QTreeView::visualRect(index);
++    const KFileItem item = m_controller->itemForIndex(index);
++    if (!item.isNull()) {
++        const int width = DolphinFileItemDelegate::nameColumnWidth(item.text(), viewOptions());
++        rect.setWidth(width);
++    }
++
++    return rect;
++}
++
+ void DolphinDetailsView::setSelection(const QRect& rect, QItemSelectionModel::SelectionFlags command)
+ {
+     // We must override setSelection() as Qt calls it internally and when this happens
+@@ -776,7 +803,7 @@
+    QModelIndex toggleIndexRangeBegin = QModelIndex();
+ 
+    do {
+-       QRect currIndexRect = nameColumnRect(currIndex);
++       QRect currIndexRect = visualRect(currIndex);
+ 
+         // Update some optimization info as we go.
+        const int cr = currIndexRect.right();
+@@ -945,18 +972,6 @@
+     headerView->resizeSection(KDirModel::Name, columnWidth[KDirModel::Name]);
+ }
+ 
+-QRect DolphinDetailsView::nameColumnRect(const QModelIndex& index) const
+-{
+-    QRect rect = visualRect(index);
+-    const KFileItem item = m_controller->itemForIndex(index);
+-    if (!item.isNull()) {
+-        const int width = DolphinFileItemDelegate::nameColumnWidth(item.text(), viewOptions());
+-        rect.setWidth(width);
+-    }
+-
+-    return rect;
+-}
+-
+ bool DolphinDetailsView::isAboveExpandingToggle(const QPoint& pos) const
+ {
+     // QTreeView offers no public API to get the information whether an index has an
+@@ -965,7 +980,7 @@
+     if (itemsExpandable()) {
+         const QModelIndex index = QTreeView::indexAt(pos);
+         if (index.isValid() && (index.column() == KDirModel::Name)) {
+-            QRect rect = nameColumnRect(index);
++            QRect rect = visualRect(index);
+             const int toggleSize = rect.height();
+             if (isRightToLeft()) {
+                 rect.moveRight(rect.right());
+diff -Nur kdebase-4.3.4/apps/dolphin/src/dolphindetailsview.h kdebase-4.3.5/apps/dolphin/src/dolphindetailsview.h
+--- kdebase-4.3.4/apps/dolphin/src/dolphindetailsview.h	2009-06-17 22:06:00.000000000 +0200
++++ kdebase-4.3.5/apps/dolphin/src/dolphindetailsview.h	2010-01-21 21:47:55.000000000 +0100
+@@ -45,6 +45,8 @@
+     explicit DolphinDetailsView(QWidget* parent, DolphinController* controller);
+     virtual ~DolphinDetailsView();
+ 
++    virtual QRegion visualRegionForSelection(const QItemSelection& selection) const;
++
+ protected:
+     virtual bool event(QEvent* event);
+     virtual QStyleOptionViewItem viewOptions() const;
+@@ -65,6 +67,7 @@
+     virtual void currentChanged(const QModelIndex& current, const QModelIndex& previous);
+     virtual bool eventFilter(QObject* watched, QEvent* event);
+     virtual QModelIndex indexAt (const QPoint& point) const;
++    virtual QRect visualRect(const QModelIndex& index) const;
+     virtual void setSelection(const QRect& rect, QItemSelectionModel::SelectionFlags command);
+     virtual void scrollTo(const QModelIndex& index, ScrollHint hint = EnsureVisible);
+ 
+@@ -175,8 +178,6 @@
+      */
+     void resizeColumns();
+ 
+-    QRect nameColumnRect(const QModelIndex& index) const;
+-
+     /**
+      * Returns true, if \a pos is within the expanding toggle of a tree.
+      */
+diff -Nur kdebase-4.3.4/apps/dolphin/src/dolphinpart.desktop kdebase-4.3.5/apps/dolphin/src/dolphinpart.desktop
+--- kdebase-4.3.4/apps/dolphin/src/dolphinpart.desktop	2009-10-02 10:18:52.000000000 +0200
++++ kdebase-4.3.5/apps/dolphin/src/dolphinpart.desktop	2010-01-21 21:47:55.000000000 +0100
+@@ -29,7 +29,7 @@
+ Name[he]=תצוגת Dolphin
+ Name[hi]=डॉल्फ़िन दृश्य
+ Name[hne]=डाल्फिन दृस्य
+-Name[hr]=Dolphin Pogled
++Name[hr]=Dolphinov prikaz
+ Name[hsb]=Napohlad w Dolphinje
+ Name[hu]=Dolphin-nézet
+ Name[is]=Dolphin sýn
+diff -Nur kdebase-4.3.4/apps/dolphin/src/kcm/kcmdolphingeneral.desktop kdebase-4.3.5/apps/dolphin/src/kcm/kcmdolphingeneral.desktop
+--- kdebase-4.3.4/apps/dolphin/src/kcm/kcmdolphingeneral.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/dolphin/src/kcm/kcmdolphingeneral.desktop	2010-01-21 21:47:55.000000000 +0100
+@@ -3,6 +3,7 @@
+ Name[bg]=Общо за програмата
+ Name[bn_IN]=Dolphin সাধারণ
+ Name[ca]=General del Dolphin
++Name[ca@valencia]=General del Dolphin
+ Name[cs]=Obecný Dolphin
+ Name[csb]=Spòldowi nastôw Dolphina
+ Name[da]=Dolphin generelt
+@@ -19,7 +20,7 @@
+ Name[gl]=Configuración xeral de Dolphin
+ Name[gu]=ડોલ્ફિન સામાન્ય
+ Name[hi]=डॉल्फ़िन सामान्य
+-Name[hr]=Dolphin Općenito
++Name[hr]=Općenito o Dolphinu
+ Name[hu]=Dolphin - Általános
+ Name[is]=Almennar stillingar Dolphin
+ Name[it]=Impostazioni generali Dolphin
+@@ -61,6 +62,7 @@
+ Comment[bg]=Това ви позволява да зададете общите настройки на програмата.
+ Comment[bn_IN]=এই পরিসেবা দ্বারা Dolphin-র সাধারণ বৈশিষ্ট্যগুলি কনফিগার করা যাবে।
+ Comment[ca]=Aquest servei permet la configuració de l'arranjament general del Dolphin.
++Comment[ca@valencia]=Este servei permet la configuració de l'arranjament general del Dolphin.
+ Comment[cs]=Tato služba umožňuje obecné nastavení Dolphinu.
+ Comment[csb]=Na ùsłëżnota pòzwôlô na spòdlową kònfigùracëjã nastôwów Dolphina.
+ Comment[da]=Denne tjeneste muliggør konfiguration af generelle Dolphin-indstillinger.
+@@ -76,7 +78,7 @@
+ Comment[ga]=Leis an tseirbhís seo is féidir na socruithe ginearálta Dolphin a chumrú.
+ Comment[gl]=Este servizo permite  modificar a configuración xeral de Dolphin.
+ Comment[hi]=यह सेवा आपको सामान्य डॉल्फ़िन सेटिंग को विन्यस्त करने देता है.
+-Comment[hr]=Ovaj servis omogućuje postavljanje općenitih Dolphinovih postavki.
++Comment[hr]=Ova usluga dozvoljava konfiguraciju općenitih postavki za Dolphin.
+ Comment[hu]=Ez a szolgáltatás a Dolphin általános beállításainak módosítását teszi lehetővé.
+ Comment[is]=Þessi þjónusta leyfir breytingar á almennum stillingum á Dolphin.
+ Comment[it]=Questo servizio permette di configurare le impostazioni generali di Dolphin.
+@@ -128,6 +130,7 @@
+ Name[bg]=Общи
+ Name[bn_IN]=সাধারণ
+ Name[ca]=General
++Name[ca@valencia]=General
+ Name[cs]=Obecné
+ Name[csb]=Spòdlowò
+ Name[da]=Generelt
+@@ -185,6 +188,7 @@
+ Comment[bg]=Общи настройки на файловия мениджър
+ Comment[bn_IN]=ফাইল পরিচালন ব্যবস্থার সাধারণ বৈশিষ্ট্য কনফিগার করুন
+ Comment[ca]=Configura les opcions generals del gestor de fitxers
++Comment[ca@valencia]=Configura les opcions generals del gestor de fitxers
+ Comment[cs]=Obecné nastavení správce souborů
+ Comment[csb]=Kònfigùracëjô spòdlowégò nastôwù menadżera lopków
+ Comment[da]=Konfiguration af generelle indstillinger for filhåndtering
+diff -Nur kdebase-4.3.4/apps/dolphin/src/kcm/kcmdolphinnavigation.desktop kdebase-4.3.5/apps/dolphin/src/kcm/kcmdolphinnavigation.desktop
+--- kdebase-4.3.4/apps/dolphin/src/kcm/kcmdolphinnavigation.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/dolphin/src/kcm/kcmdolphinnavigation.desktop	2010-01-21 21:47:55.000000000 +0100
+@@ -3,6 +3,7 @@
+ Name[bg]=Навигация в програмата
+ Name[bn_IN]=Dolphin পরিদর্শন
+ Name[ca]=Navegació del Dolphin
++Name[ca@valencia]=Navegació del Dolphin
+ Name[cs]=Navigace Dolphinu
+ Name[csb]=Nawigacëjô Dolphina
+ Name[da]=Dolphin-navigation
+@@ -19,7 +20,7 @@
+ Name[gl]=Configuración da navegación de Dolphin
+ Name[gu]=ડોલ્ફિન શોધખોળ
+ Name[hi]=डॉल्फ़िन संचरण
+-Name[hr]=Dolphin Navigacija
++Name[hr]=Dolphinova navigacija
+ Name[hu]=Dolphin - Navigáció
+ Name[is]=Dolphin stýringar
+ Name[it]=Navigazione Dolphin
+@@ -60,6 +61,7 @@
+ Comment[bg]=Това ви позволява да настроите навигацията в Dolphin.
+ Comment[bn_IN]=এই পরিসেবা দ্বারা Dolphin-র পরিদর্শন ব্যবস্থা কনফিগার করা যাবে।
+ Comment[ca]=Aquest servei permet la configuració de la navegació del Dolphin.
++Comment[ca@valencia]=Este servei permet la configuració de la navegació del Dolphin.
+ Comment[cs]=Tato služba umožňuje nastavení navigace v Dolphinu.
+ Comment[csb]=Na ùsłëżnota pòzwôlô na kònfigùracëjã nawigacëji Dolphina,
+ Comment[da]=Denne tjeneste muliggør konfiguration af Dolphin-navigation.
+@@ -75,7 +77,7 @@
+ Comment[ga]=Leis an tseirbhís seo is féidir nascleanúint Dolphin a chumrú.
+ Comment[gl]=Este servizo permite modificar a configuración da navegación de Dolphin.
+ Comment[hi]=यह सेवा आपको डॉल्फ़िन संचरण को विन्यस्त करने देता है.
+-Comment[hr]=Ovaj servis omogućuje konfiguraciju Dolphinove navigacije.
++Comment[hr]=Ova usluga dozvoljava konfiguraciju Dolphinove navigacije.
+ Comment[hu]=Ez a szolgáltatás a Dolphin navigálási beállításainak módosítását teszi lehetővé.
+ Comment[is]=Þessi þjónusta leyfir stillingar á leiðarstýringum Dolphin.
+ Comment[it]=Questo servizio permette di configurare la navigazione con Dolphin.
+@@ -126,6 +128,7 @@
+ Name[bg]=Навигация
+ Name[bn_IN]=পরিদর্শন
+ Name[ca]=Navegació
++Name[ca@valencia]=Navegació
+ Name[cs]=Navigace
+ Name[csb]=Nawigacëjô
+ Name[da]=Navigation
+@@ -185,6 +188,7 @@
+ Comment[bg]=Настройване навигацията във файловия мениджър
+ Comment[bn_IN]=ফাইল পরিচালন পরিদর্শনের বৈশিষ্ট্য কনফিগার করুন
+ Comment[ca]=Configura la navegació del gestor de fitxers
++Comment[ca@valencia]=Configura la navegació del gestor de fitxers
+ Comment[cs]=Nastavení navigace správce souborů
+ Comment[csb]=Kònfigùracëjô nawigacëji menadżera lopków
+ Comment[da]=Indstil navigation i filhåndtering
+@@ -200,7 +204,7 @@
+ Comment[ga]=Cumraigh nascleanúint bhainisteoir na gcomhad
+ Comment[gl]=Configura as navegación co xestor de ficheiros
+ Comment[hi]=फ़ाइल प्रबंधक संचरण विन्यस्त करें
+-Comment[hr]=Konfiguriranje postavki navigacije upravitelja datotekama
++Comment[hr]=Podešavanje postavki navigacije upravitelja datoteka
+ Comment[hu]=A fájlkezelő navigálási beállításai
+ Comment[is]=Stilla leiðarstýringu í skráastjóra
+ Comment[it]=Configura la navigazione col gestore dei file
+diff -Nur kdebase-4.3.4/apps/dolphin/src/kcm/kcmdolphinservices.desktop kdebase-4.3.5/apps/dolphin/src/kcm/kcmdolphinservices.desktop
+--- kdebase-4.3.4/apps/dolphin/src/kcm/kcmdolphinservices.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/dolphin/src/kcm/kcmdolphinservices.desktop	2010-01-21 21:47:55.000000000 +0100
+@@ -3,6 +3,7 @@
+ Name[bg]=Услуги в Dolphin
+ Name[bn_IN]=Dolphin পরিসেবা
+ Name[ca]=Serveis del Dolphin
++Name[ca@valencia]=Serveis del Dolphin
+ Name[cs]=Služby Dolphinu
+ Name[csb]=Ùsłëżnotë Dolphina
+ Name[da]=Dolphin-tjenester
+@@ -19,7 +20,7 @@
+ Name[gl]=Servizos de Dolphin
+ Name[gu]=ડોલ્ફિન સેવાઓ
+ Name[hi]=डॉल्फ़िन सेवा
+-Name[hr]=Dolphin Usluge
++Name[hr]=Dolphinove usluge
+ Name[hu]=Dolphin - Szolgáltatások
+ Name[is]=Dolphin þjónustur
+ Name[it]=Servizi Dolphin
+@@ -155,6 +156,7 @@
+ Comment[bg]=Настройване услугите на файловия мениджър
+ Comment[bn_IN]=ফাইল পরিচালন পরিসেবার বৈশিষ্ট্য কনফিগার করুন
+ Comment[ca]=Configura els serveis del gestor de fitxers
++Comment[ca@valencia]=Configura els serveis del gestor de fitxers
+ Comment[cs]=Nastavení služeb správce souborů
+ Comment[csb]=Kònfigùracëjô ùsłëżnotów menadżera lopków
+ Comment[da]=Indstil filhåndteringstjenester
+@@ -171,7 +173,7 @@
+ Comment[gl]=Configura os servizos do xestor de ficheiros
+ Comment[gu]=ફાઇલ વ્યવસ્થાપક સેવાઓ રૂપરેખાંકિત કરો
+ Comment[hi]=फ़ाइल प्रबंधक सेवा विन्यस्त करें
+-Comment[hr]=Konfiguriranje postavki usluga upravitelja datotekama
++Comment[hr]=Podešavanje postavki usluga upravitelja datoteka
+ Comment[hu]=A fájlkezelő szolgáltatások beállításai
+ Comment[is]=Stilla þjónustur skráastjóra
+ Comment[it]=Configura i servizi del gestore dei file
+diff -Nur kdebase-4.3.4/apps/dolphin/src/kcm/kcmdolphinviewmodes.desktop kdebase-4.3.5/apps/dolphin/src/kcm/kcmdolphinviewmodes.desktop
+--- kdebase-4.3.4/apps/dolphin/src/kcm/kcmdolphinviewmodes.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/dolphin/src/kcm/kcmdolphinviewmodes.desktop	2010-01-21 21:47:55.000000000 +0100
+@@ -3,6 +3,7 @@
+ Name[bg]=Режими на преглед
+ Name[bn_IN]=Dolphin প্রদর্শনের মোড
+ Name[ca]=Modes de vista del Dolphin
++Name[ca@valencia]=Modes de vista del Dolphin
+ Name[cs]=Režimy pohledů Dolphinu
+ Name[csb]=Ôrtë wëzdrzatkù Dolphina
+ Name[da]=Dolphins visningstilstande
+@@ -19,7 +20,7 @@
+ Name[gl]=Modos de vista de Dolphin
+ Name[gu]=ડોલ્ફિન દેખાવ સ્થિતિઓ
+ Name[hi]=डॉल्फ़िन दृश्य मोड
+-Name[hr]=Dolphin Načini Pogleda
++Name[hr]=Dolphinovi načini prikaza
+ Name[hu]=Dolphin nézetmódok
+ Name[is]=Dolphin skoðunarhamir
+ Name[it]=Viste di Dolphin
+@@ -61,6 +62,7 @@
+ Comment[bg]=Това ви позволява да настроите режимите на показване в Dolphin.
+ Comment[bn_IN]=এই পরিসেবা দ্বারা Dolphin প্রদর্শনের মোড কনফিগার করা যাবে।
+ Comment[ca]=Aquest servei permet la configuració dels modes de vista del Dolphin.
++Comment[ca@valencia]=Este servei permet la configuració dels modes de vista del Dolphin.
+ Comment[cs]=Tato služba umožňuje nastavení režimů pohledu Dolphinu.
+ Comment[csb]=Na ùsłëżnota pòzwôlô na kònfigùracëjã ôrtów wëzdrzatkù Dolphina.
+ Comment[da]=Denne tjeneste muliggør konfiguration af Dolphins visningstilstande.
+@@ -76,7 +78,7 @@
+ Comment[ga]=Leis an tseirbhís seo is féidir na hamhairc Dolphin a chumrú.
+ Comment[gl]=Este servizo permite modificar a configuración das vistas de Dolphin.
+ Comment[hi]=यह सेवा आपको डॉल्फ़िन दृश्य मोड को विन्यस्त करने देता है.
+-Comment[hr]=Ovaj servis omogućuje konfiguraciju Dolphinovih načina pogleda.
++Comment[hr]=Ova usluga dozvoljava konfiguraciju Dolphinovih načina prikaza.
+ Comment[hu]=Ez a szolgáltatás a Dolphin nézetmódjainak beállítását teszi lehetővé.
+ Comment[is]=Þessi þjónusta leyfir stillingar á skoðunarham í Dolphin.
+ Comment[it]=Questo servizio permette di configurare le viste di Dolphin.
+@@ -128,6 +130,7 @@
+ Name[bg]=Режими на преглед
+ Name[bn_IN]=প্রদর্শনের মোড
+ Name[ca]=Modes de vista
++Name[ca@valencia]=Modes de vista
+ Name[cs]=Režimy pohledu
+ Name[csb]=Ôrtë wëzdrzatków
+ Name[da]=Visningstilstande
+@@ -186,6 +189,7 @@
+ Comment[bg]=Настройване режимите на преглед във файловия мениджър
+ Comment[bn_IN]=ফাইল পরিচালন ব্যবস্থা প্রদর্শনের মোড কনফিগার করুন
+ Comment[ca]=Configura els modes de vista del gestor de fitxers
++Comment[ca@valencia]=Configura els modes de vista del gestor de fitxers
+ Comment[cs]=Nastavení režimů pohledu správce souborů
+ Comment[csb]=Kònfigùracëjô ôrtów wëzdrzatkù menadżera lopków
+ Comment[da]=Indstil filhåndteringens visningstilstande
+@@ -202,7 +206,7 @@
+ Comment[gl]=Configura os modos de visualización do xestor de ficheiros
+ Comment[gu]=ફાઇલ વ્યવસ્થાપક દેખાવ સ્થિતિઓ રૂપરેખાંકિત કરો
+ Comment[hi]=फ़ाइल प्रबंधक दृश्य विधि विन्यस्त करें
+-Comment[hr]=Konfiguriranje postavki načina prikaza upravitelja datotekama
++Comment[hr]=Podešavanje postavki načina prikaza upravitelja datoteka
+ Comment[hu]=A fájlkezelő nézetmódjainak beállításai
+ Comment[is]=Stilla skoðunarhami í skráastjóra
+ Comment[it]=Configura le viste del gestore dei file
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Development/assistant.desktop kdebase-4.3.5/apps/kappfinder/apps/Development/assistant.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Development/assistant.desktop	2009-10-02 10:18:45.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Development/assistant.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -118,7 +118,7 @@
+ GenericName[he]=דפדפן מסמכים
+ GenericName[hi]=दस्तावेज़ ब्राउज़रज़र
+ GenericName[hne]=कागद ब्राउजर
+-GenericName[hr]=Preglednik dokumenata
++GenericName[hr]=Pretraživač dokumenata
+ GenericName[hsb]=Přelistowar za tekstowe dokumenty
+ GenericName[hu]=Dokumentumböngésző
+ GenericName[is]=Skjalavafri
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Development/ddd.desktop kdebase-4.3.5/apps/kappfinder/apps/Development/ddd.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Development/ddd.desktop	2009-10-02 10:18:45.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Development/ddd.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -34,7 +34,7 @@
+ GenericName[he]=Data Display Debugger
+ GenericName[hi]=डाटा डिस्प्ले डिबगर
+ GenericName[hne]=डाटा डिस्प्ले डिबगर
+-GenericName[hr]=Uklanjanje nedostataka u prikazu podataka
++GenericName[hr]=Prikaz podataka u svrhu ispravljanja kvarova
+ GenericName[hsb]=Data Display Debugger
+ GenericName[hu]=Nyomkövető
+ GenericName[is]=DD-villugreiningartól
+@@ -77,7 +77,7 @@
+ GenericName[tg]=Рӯйхати маълумоти ислоҳгар
+ GenericName[th]=เครื่องมือดีบักการแสดงข้อมูล
+ GenericName[tr]=Veri Gösterim Hata Ayıklayıcısı
+-GenericName[uk]=Зневадник "Data Display Debugger"
++GenericName[uk]=Зневадник «Data Display Debugger»
+ GenericName[vi]=Bộ gỡ lỗi hiển thị dữ liệu
+ GenericName[wa]=Disbugueu DDD
+ GenericName[xh]=Umbonisi we Data ye Debugger
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Development/dlgedit.desktop kdebase-4.3.5/apps/kappfinder/apps/Development/dlgedit.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Development/dlgedit.desktop	2009-10-02 10:18:45.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Development/dlgedit.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Таҳриргари диалог
+ GenericName[th]=เครื่องมือแก้ไขกล่องโต้ตอบ
+ GenericName[tr]=İletişim Kutusu Düzenleyicisi
+-GenericName[uk]=Редактор діалогів
++GenericName[uk]=Редактор діалогових вікон
+ GenericName[uz]=Dialog tahrirchi
+ GenericName[uz@cyrillic]=Диалог таҳрирчи
+ GenericName[vi]=Bộ sửa hộp thoại
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/alephone.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/alephone.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/alephone.desktop	2009-11-27 14:01:42.000000000 +0100
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/alephone.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -110,7 +110,7 @@
+ Comment[he]=גרסת קוד פתוח של Marathon Infinity עבור SDL עם Open GL מבוטל
+ Comment[hi]=एसडीएल के लिए मेराथन इनफिनिटी का ओपन सोर्स संस्करण जिसमें ओपनजीएल अक्षम है
+ Comment[hne]=एसडीएल बर मेराथन इनफिनिटी के ओपन सोर्स संस्करन जेमां ओपनजीएल अक्छम हे
+-Comment[hr]=Verzija Marathon Infinity otvorenog koda za SDL koji ima onemogućen OpenGL
++Comment[hr]=Inačica Marathon Infinitya otvorenog koda za SDL koji ima onemogućen OpenGL
+ Comment[hsb]=Swobodna warianta "Marathon Infinity" za SDL bjez OpenGL
+ Comment[hu]=A Marathon Infinity for SDL játék szabad forráskódú változata (OpenGL-támogatás nélkül)
+ Comment[is]=Open source útgáfa af Marathon Infinity fyrir SDL með OpenGl óvirkt
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/alephone-nogl.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/alephone-nogl.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/alephone-nogl.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/alephone-nogl.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -115,7 +115,7 @@
+ Comment[he]=גרסת קוד פתוח של Marathon Infinity עבור SDL
+ Comment[hi]=एसडीएल के लिए मेराथन इनफिनिटी का ओपन सोर्स संस्करण
+ Comment[hne]=एसडीएल बर मेराथन इनफिनिटी के ओपन सोर्स संस्करन
+-Comment[hr]=Verzija Marathon Infinity za SDL, otvorenog koda
++Comment[hr]=Inačica Marathon Infinitya otvorenog koda za SDL
+ Comment[hsb]=Swobodna warianta "Marathon Infinity" za SDL
+ Comment[hu]=Szabad forráskódú, SDL-es Marathon Infinity változat
+ Comment[is]=Open source útgáfa af Marathon Infinity fyrir SDL
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/battalion.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/battalion.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/battalion.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/battalion.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Бозиҳои аркад
+ GenericName[th]=เกมอาเขต
+ GenericName[tr]=Macera oyunu
+-GenericName[uk]=Гра "Arcade"
++GenericName[uk]=Аркадна гра
+ GenericName[uz]=Arkada oʻyini
+ GenericName[uz@cyrillic]=Аркада ўйини
+ GenericName[vi]=Trò chơi mái vòm
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/ClanBomber.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/ClanBomber.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/ClanBomber.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/ClanBomber.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -159,7 +159,7 @@
+ GenericName[tg]=Бозиҳои аркад
+ GenericName[th]=เกมอาเขต
+ GenericName[tr]=Macera oyunu
+-GenericName[uk]=Гра "Arcade"
++GenericName[uk]=Аркадна гра
+ GenericName[uz]=Arkada oʻyini
+ GenericName[uz@cyrillic]=Аркада ўйини
+ GenericName[vi]=Trò chơi mái vòm
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/cxhextris.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/cxhextris.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/cxhextris.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/cxhextris.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -159,7 +159,7 @@
+ GenericName[tg]=Бозиҳои аркад
+ GenericName[th]=เกมอาเขต
+ GenericName[tr]=Macera oyunu
+-GenericName[uk]=Гра "Arcade"
++GenericName[uk]=Аркадна гра
+ GenericName[uz]=Arkada oʻyini
+ GenericName[uz@cyrillic]=Аркада ўйини
+ GenericName[vi]=Trò chơi mái vòm
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/FrozenBubble.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/FrozenBubble.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/FrozenBubble.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/FrozenBubble.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -32,7 +32,7 @@
+ GenericName[he]=משחק דמוי טטריס
+ GenericName[hi]=टेट्रिस जैसे खेल
+ GenericName[hne]=टेट्रिस जइसन खेल
+-GenericName[hr]=Igra nalik na Tetris
++GenericName[hr]=Igra nalik Tetrisu
+ GenericName[hsb]=Tetrisowe hry
+ GenericName[hu]=Tetris-szerű
+ GenericName[is]=Leikur líkur Tetris
+@@ -76,7 +76,7 @@
+ GenericName[tg]=Бозиҳои тетрис
+ GenericName[th]=เกมแบบเททริส
+ GenericName[tr]=Tetris Benzeri Bir Oyun
+-GenericName[uk]=Гра "а ля" Тетрис
++GenericName[uk]=Гра, схожа на тетріс
+ GenericName[uz]=Tetrisga oʻxshagan oʻyin
+ GenericName[uz@cyrillic]=Тетрисга ўхшаган ўйин
+ GenericName[vi]=Trò chơi kiểu xếp hình
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/Gnibbles.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/Gnibbles.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/Gnibbles.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/Gnibbles.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -116,7 +116,7 @@
+ GenericName[he]=משחק Nibbles של GNOME
+ GenericName[hi]=ग्नोम निब्बल्स खेल
+ GenericName[hne]=ग्नोम निब्बल्स खेल
+-GenericName[hr]=GNOME igra slična Nibbles-u
++GenericName[hr]=GNOME Nibbles igra
+ GenericName[hsb]=GNOME Nibbles
+ GenericName[hu]=GNOME Nibbles
+ GenericName[is]=GNOME Nibbles leikur
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/GnobotsII.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/GnobotsII.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/GnobotsII.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/GnobotsII.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Бозиҳои аркад
+ GenericName[th]=เกมอาเขต
+ GenericName[tr]=Macera oyunu
+-GenericName[uk]=Гра "Arcade"
++GenericName[uk]=Аркадна гра
+ GenericName[uz]=Arkada oʻyini
+ GenericName[uz@cyrillic]=Аркада ўйини
+ GenericName[vi]=Trò chơi mái vòm
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/Mures.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/Mures.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/Mures.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/Mures.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Бозиҳои аркад
+ GenericName[th]=เกมอาเขต
+ GenericName[tr]=Macera oyunu
+-GenericName[uk]=Гра "Arcade"
++GenericName[uk]=Аркадна гра
+ GenericName[uz]=Arkada oʻyini
+ GenericName[uz@cyrillic]=Аркада ўйини
+ GenericName[vi]=Trò chơi mái vòm
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/scavenger.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/scavenger.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/scavenger.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/scavenger.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Бозиҳои аркад
+ GenericName[th]=เกมอาเขต
+ GenericName[tr]=Macera oyunu
+-GenericName[uk]=Гра "Arcade"
++GenericName[uk]=Аркадна гра
+ GenericName[uz]=Arkada oʻyini
+ GenericName[uz@cyrillic]=Аркада ўйини
+ GenericName[vi]=Trò chơi mái vòm
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/SuperMethaneBrothers.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/SuperMethaneBrothers.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/SuperMethaneBrothers.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/SuperMethaneBrothers.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -159,7 +159,7 @@
+ GenericName[tg]=Бозиҳои аркад
+ GenericName[th]=เกมอาเขต
+ GenericName[tr]=Macera oyunu
+-GenericName[uk]=Гра "Arcade"
++GenericName[uk]=Аркадна гра
+ GenericName[uz]=Arkada oʻyini
+ GenericName[uz@cyrillic]=Аркада ўйини
+ GenericName[vi]=Trò chơi mái vòm
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/Trophy.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/Trophy.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/Trophy.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/Trophy.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -159,7 +159,7 @@
+ GenericName[tg]=Бозиҳои аркад
+ GenericName[th]=เกมอาเขต
+ GenericName[tr]=Macera oyunu
+-GenericName[uk]=Гра "Arcade"
++GenericName[uk]=Аркадна гра
+ GenericName[uz]=Arkada oʻyini
+ GenericName[uz@cyrillic]=Аркада ўйини
+ GenericName[vi]=Trò chơi mái vòm
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/XKobo.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/XKobo.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/XKobo.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/XKobo.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Бозиҳои аркад
+ GenericName[th]=เกมอาเขต
+ GenericName[tr]=Macera oyunu
+-GenericName[uk]=Гра "Arcade"
++GenericName[uk]=Аркадна гра
+ GenericName[uz]=Arkada oʻyini
+ GenericName[uz@cyrillic]=Аркада ўйини
+ GenericName[vi]=Trò chơi mái vòm
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/XSoldier.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/XSoldier.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Arcade/XSoldier.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Arcade/XSoldier.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Бозиҳои аркад
+ GenericName[th]=เกมอาเขต
+ GenericName[tr]=Macera oyunu
+-GenericName[uk]=Гра "Arcade"
++GenericName[uk]=Аркадна гра
+ GenericName[uz]=Arkada oʻyini
+ GenericName[uz@cyrillic]=Аркада ўйини
+ GenericName[vi]=Trò chơi mái vòm
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Board/Gataxx.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Board/Gataxx.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Board/Gataxx.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Board/Gataxx.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Бозиҳои аркад
+ GenericName[th]=เกมอาเขต
+ GenericName[tr]=Macera oyunu
+-GenericName[uk]=Гра "Arcade"
++GenericName[uk]=Аркадна гра
+ GenericName[uz]=Arkada oʻyini
+ GenericName[uz@cyrillic]=Аркада ўйини
+ GenericName[vi]=Trò chơi mái vòm
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Board/Gnotravex.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Board/Gnotravex.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Board/Gnotravex.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Board/Gnotravex.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Бозиҳои аркад
+ GenericName[th]=เกมอาเขต
+ GenericName[tr]=Macera oyunu
+-GenericName[uk]=Гра "Arcade"
++GenericName[uk]=Аркадна гра
+ GenericName[uz]=Arkada oʻyini
+ GenericName[uz@cyrillic]=Аркада ўйини
+ GenericName[vi]=Trò chơi mái vòm
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Board/Gstones.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Board/Gstones.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Board/Gstones.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Board/Gstones.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -32,7 +32,7 @@
+ Name[he]=GNOME Stones
+ Name[hi]=ग्नोम स्टोन्स
+ Name[hne]=ग्नोम स्टोन्स
+-Name[hr]=GNOME stijene
++Name[hr]=GNOME Kamenje
+ Name[hsb]=GNOME kamjenje
+ Name[hu]=GNOME Stones
+ Name[is]=GNOME Stones
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Emulators/qmamecat.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Emulators/qmamecat.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Emulators/qmamecat.desktop	2009-10-02 10:18:49.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Emulators/qmamecat.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -75,7 +75,7 @@
+ GenericName[tg]=Тақлидгари Arcade
+ GenericName[th]=จำลองเกมอาเขต
+ GenericName[tr]=Macera Oyunu Öykünücüsü
+-GenericName[uk]=Емулятор "Arcade"
++GenericName[uk]=Емулятор «Arcade»
+ GenericName[uz]= Arkada oʻyinlar emulyatori
+ GenericName[uz@cyrillic]= Аркада ўйинлар эмулятори
+ GenericName[vi]=Mô phỏng Mái vòm
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/penguin-command.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/penguin-command.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/penguin-command.desktop	2009-10-02 10:18:49.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/penguin-command.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Бозиҳои аркад
+ GenericName[th]=เกมอาเขต
+ GenericName[tr]=Macera oyunu
+-GenericName[uk]=Гра "Arcade"
++GenericName[uk]=Аркадна гра
+ GenericName[uz]=Arkada oʻyini
+ GenericName[uz@cyrillic]=Аркада ўйини
+ GenericName[vi]=Trò chơi mái vòm
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Roguelikes/angband.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Roguelikes/angband.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Roguelikes/angband.desktop	2009-10-02 10:18:49.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Roguelikes/angband.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -159,7 +159,7 @@
+ Comment[tg]=Паҳлавон шавед ва дар ҷанг бо шайтон ғолиб омадед
+ Comment[th]=ดำดิ่งสู่ Angband แล้วเอาชนะ Morgoth
+ Comment[tr]=Angband'a dalıp Morgoth'u mağlub edin
+-Comment[uk]=Пірніть у Ангбанд та переможіть Моргота
++Comment[uk]=Заглибтеся у Анґбанд і вбийте Моргота
+ Comment[uz]=Angbandga borib Morgotni yengib chiqing
+ Comment[uz@cyrillic]=Ангбандга бориб Морготни енгиб чиқинг
+ Comment[vi]=Lặn xuống Angband và đánh bại Morgoth
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Roguelikes/moria.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Roguelikes/moria.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Roguelikes/moria.desktop	2009-10-02 10:18:49.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Roguelikes/moria.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -159,7 +159,7 @@
+ Comment[tg]=Паҳлавон шавед ва дар ҷанг бо шайтон ғолиб омадед
+ Comment[th]=ดำดิ่งสู่ Moria แล้วเอาชนะ Balrog
+ Comment[tr]=Moria'ya dalıp Balrog'u mağlub edin
+-Comment[uk]=Пірніть у Морію та переможіть Барлога
++Comment[uk]=Заглибтеся у Морію і вбийте Барлога
+ Comment[uz]=Moriaga borib Balrogni yengib chiqing
+ Comment[uz@cyrillic]=Мориага бориб Балрогни енгиб чиқинг
+ Comment[vi]=Lặn xuống Moria và đánh bại Balrog
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/Roguelikes/zangband.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/Roguelikes/zangband.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/Roguelikes/zangband.desktop	2009-10-02 10:18:49.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/Roguelikes/zangband.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -158,7 +158,7 @@
+ GenericName[tg]=Бар душмани мор ғолиб омадед
+ GenericName[th]=เอาชนะอสรพิษแห่งกลียุค
+ GenericName[tr]=Kaos İblisini mağlub edin
+-GenericName[uk]=Переможіть гадюку хаосу
++GenericName[uk]=Вбийте Гадюку Хаосу
+ GenericName[uz]=Xaos ilonini yengib chiqish
+ GenericName[uz@cyrillic]=Хаос илонини енгиб чиқиш
+ GenericName[vi]=Đánh bại con Rắn Hỗn loạn
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/TacticStrategy/freeciv.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/TacticStrategy/freeciv.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/TacticStrategy/freeciv.desktop	2009-10-02 10:18:49.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/TacticStrategy/freeciv.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Бозиҳои стратегӣ
+ GenericName[th]=เกมกลยุทธ์
+ GenericName[tr]=Strateji Oyunu
+-GenericName[uk]=Гра на стратегію
++GenericName[uk]=Стратегічна гра
+ GenericName[uz]=Strategiya oʻyini
+ GenericName[uz@cyrillic]=Стратегия ўйини
+ GenericName[vi]=Trò chơi chiến thuật
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Games/xshipwars.desktop kdebase-4.3.5/apps/kappfinder/apps/Games/xshipwars.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Games/xshipwars.desktop	2009-10-02 10:18:49.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Games/xshipwars.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Бозиҳои стратегӣ
+ GenericName[th]=เกมกลยุทธ์
+ GenericName[tr]=Strateji Oyunu
+-GenericName[uk]=Гра на стратегію
++GenericName[uk]=Стратегічна гра
+ GenericName[uz]=Strategiya oʻyini
+ GenericName[uz@cyrillic]=Стратегия ўйини
+ GenericName[vi]=Trò chơi chiến thuật
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Graphics/blender.desktop kdebase-4.3.5/apps/kappfinder/apps/Graphics/blender.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Graphics/blender.desktop	2009-11-27 14:01:41.000000000 +0100
++++ kdebase-4.3.5/apps/kappfinder/apps/Graphics/blender.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -116,7 +116,7 @@
+ GenericName[he]=ממדל ומרנדר תלת־מימד
+ GenericName[hi]=3डी मॉडलर/रेंडरर
+ GenericName[hne]=3डी माडलर/रेंडरर
+-GenericName[hr]=Program za modeliranje i iscrtavanje 3d scena
++GenericName[hr]=3D modelator/iscrtavač
+ GenericName[hsb]=3D Modeler/Renderer
+ GenericName[hu]=3D-s modellező
+ GenericName[is]=Tól til vinnslu með 3D form
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Graphics/GPhoto.desktop kdebase-4.3.5/apps/kappfinder/apps/Graphics/GPhoto.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Graphics/GPhoto.desktop	2009-10-02 10:18:44.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Graphics/GPhoto.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Барномаи камераи рақамӣ
+ GenericName[th]=โปรแกรมกล้องดิจิทัล
+ GenericName[tr]=Dijital Kamera Programı
+-GenericName[uk]=Програма для цифрового фотоапарата
++GenericName[uk]=Програма для роботи з цифровим фотоапаратом
+ GenericName[uz]=Fotoaparat uchun dastur
+ GenericName[uz@cyrillic]=Фотоапарат учун дастур
+ GenericName[vi]=Chương trình máy ảnh số
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Graphics/Gqview.desktop kdebase-4.3.5/apps/kappfinder/apps/Graphics/Gqview.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Graphics/Gqview.desktop	2009-10-02 10:18:44.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Graphics/Gqview.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Намоишгари тасвирҳо
+ GenericName[th]=โปรแกรมเรียกดูภาพ
+ GenericName[tr]=Resim Tarayıcı
+-GenericName[uk]=Навігатор зображень
++GenericName[uk]=Переглядач зображень
+ GenericName[uz]=Rasm brauzeri
+ GenericName[uz@cyrillic]=Расм браузери
+ GenericName[vi]=Bộ duyệt ảnh
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Graphics/inkscape.desktop kdebase-4.3.5/apps/kappfinder/apps/Graphics/inkscape.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Graphics/inkscape.desktop	2009-10-02 10:18:44.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Graphics/inkscape.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -158,7 +158,7 @@
+ GenericName[tg]=Тасвирҳои векторӣ
+ GenericName[th]=วาดภาพเวกเตอร์
+ GenericName[tr]=Vektör Tabanlı Çizim
+-GenericName[uk]=Векторне креслення
++GenericName[uk]=Векторне малювання
+ GenericName[uz]=Vektor chizmalarni yaratish vositasi
+ GenericName[uz@cyrillic]=Вектор чизмаларни яратиш воситаси
+ GenericName[vi]=Vẽ đồ họa véctơ
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Graphics/sodipodi.desktop kdebase-4.3.5/apps/kappfinder/apps/Graphics/sodipodi.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Graphics/sodipodi.desktop	2009-10-02 10:18:44.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Graphics/sodipodi.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Тасвирҳои векторӣ
+ GenericName[th]=วาดภาพเวกเตอร์
+ GenericName[tr]=Vektör Tabanlı Çizim
+-GenericName[uk]=Векторне креслення
++GenericName[uk]=Векторне малювання
+ GenericName[uz]=Vektor chizmalarni yaratish vositasi
+ GenericName[uz@cyrillic]=Вектор чизмаларни яратиш воситаси
+ GenericName[vi]=Vẽ đồ họa véctơ
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Internet/btdownloadgui.desktop kdebase-4.3.5/apps/kappfinder/apps/Internet/btdownloadgui.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Internet/btdownloadgui.desktop	2009-10-02 10:18:46.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Internet/btdownloadgui.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -75,7 +75,7 @@
+ GenericName[tg]=Барномаи BitTorrent
+ GenericName[th]=GUI ของบิตทอร์เรนท์
+ GenericName[tr]=BitTorrent Arayüzü
+-GenericName[uk]=BitTorrent GUI
++GenericName[uk]=Графічний інтерфейс до BitTorrent
+ GenericName[uz]=BitTorrent uchun grafik interfeys
+ GenericName[uz@cyrillic]=BitTorrent учун график интерфейс
+ GenericName[vi]=Giao diện BitTorrent
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Internet/Fetchmailconf.desktop kdebase-4.3.5/apps/kappfinder/apps/Internet/Fetchmailconf.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Internet/Fetchmailconf.desktop	2009-10-02 10:18:46.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Internet/Fetchmailconf.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -159,7 +159,7 @@
+ GenericName[tg]=Танзимоти Fetchmail
+ GenericName[th]=ปรับแต่ง Fetchmail
+ GenericName[tr]=Fetchmail Yapılandırması
+-GenericName[uk]=Конфігурації fetchmail
++GenericName[uk]=Налаштування fetchmail
+ GenericName[uz]=Fetchmail moslamasi
+ GenericName[uz@cyrillic]=Fetchmail мосламаси
+ GenericName[vi]=Cấu hình Fetchmail
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Internet/GnomeICU.desktop kdebase-4.3.5/apps/kappfinder/apps/Internet/GnomeICU.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Internet/GnomeICU.desktop	2009-10-02 10:18:46.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Internet/GnomeICU.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Паёмнависии ICQ
+ GenericName[th]=ICQ Messenger
+ GenericName[tr]=ICQ Hızlı Mesajlaşma Uygulaması
+-GenericName[uk]=Кур'єр (messenger) ICQ
++GenericName[uk]=Кур'єр ICQ
+ GenericName[uz]=ICQ xabar almashish vositasi
+ GenericName[uz@cyrillic]=ICQ хабар алмашиш воситаси
+ GenericName[vi]=Trình nhắn tin ICQ
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Internet/licq.desktop kdebase-4.3.5/apps/kappfinder/apps/Internet/licq.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Internet/licq.desktop	2009-10-02 10:18:46.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Internet/licq.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -161,7 +161,7 @@
+ GenericName[tg]=Паёмнависии ICQ
+ GenericName[th]=ICQ Messenger
+ GenericName[tr]=ICQ Hızlı Mesajlaşma Uygulaması
+-GenericName[uk]=Кур'єр (messenger) ICQ
++GenericName[uk]=Кур'єр ICQ
+ GenericName[uz]=ICQ xabar almashish vositasi
+ GenericName[uz@cyrillic]=ICQ хабар алмашиш воситаси
+ GenericName[vi]=Trình nhắn tin ICQ
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Internet/Terminal/btdownloadcurses.desktop kdebase-4.3.5/apps/kappfinder/apps/Internet/Terminal/btdownloadcurses.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Internet/Terminal/btdownloadcurses.desktop	2009-10-02 10:18:46.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Internet/Terminal/btdownloadcurses.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -75,7 +75,7 @@
+ GenericName[tg]=Барномаи BitTorrent
+ GenericName[th]=GUI ของบิตทอร์เรนท์
+ GenericName[tr]=BitTorrent Arayüzü
+-GenericName[uk]=BitTorrent GUI
++GenericName[uk]=Графічний інтерфейс до BitTorrent
+ GenericName[uz]=BitTorrent uchun grafik interfeys
+ GenericName[uz@cyrillic]=BitTorrent учун график интерфейс
+ GenericName[vi]=Giao diện BitTorrent
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Multimedia/alsamixergui.desktop kdebase-4.3.5/apps/kappfinder/apps/Multimedia/alsamixergui.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Multimedia/alsamixergui.desktop	2009-11-27 14:01:42.000000000 +0100
++++ kdebase-4.3.5/apps/kappfinder/apps/Multimedia/alsamixergui.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -159,7 +159,7 @@
+ GenericName[tg]=Барномаи идоракунии Alsa
+ GenericName[th]=ฟร้อนต์เอนด์ของตัวผสมเสียง Alsa
+ GenericName[tr]=Alsa Ses Karıştırıcı Önyüzü
+-GenericName[uk]=Інтерфейс до аудіомікшеру для ALSA
++GenericName[uk]=Інтерфейс до аудіомікшера ALSA
+ GenericName[uz]=ALSA mikseri uchun grafik interfeys
+ GenericName[uz@cyrillic]=ALSA миксери учун график интерфейс
+ GenericName[vi]=Giao diện Hoà âm Alsa
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Multimedia/amsynth.desktop kdebase-4.3.5/apps/kappfinder/apps/Multimedia/amsynth.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Multimedia/amsynth.desktop	2009-10-02 10:18:47.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Multimedia/amsynth.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -144,7 +144,7 @@
+ GenericName[tg]=Синтезатори идоракунии Retro Analog
+ GenericName[th]=โปรแกรมสังเคราะห์เสียงแบบ Retro Analog - Modeling
+ GenericName[tr]=Retro Analog - Modeling Softsynth
+-GenericName[uk]=Програмний синтезатор - старі аналогові схеми
++GenericName[uk]=Програмний синтезатор — старі аналогові схеми
+ GenericName[wa]=Retro Analog - Modeling Softsynth
+ GenericName[x-test]=xxRetro Analog - Modeling Softsynthxx
+ GenericName[zh_CN]=反向模拟 - 模型软件合成器
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Multimedia/ardour.desktop kdebase-4.3.5/apps/kappfinder/apps/Multimedia/ardour.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Multimedia/ardour.desktop	2009-10-02 10:18:47.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Multimedia/ardour.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -148,7 +148,7 @@
+ GenericName[tg]=Multitrack Audio Studio
+ GenericName[th]=โปรแกรมห้องอัดเสียงแบบหลายแทร็ก
+ GenericName[tr]=Çoklu İz İşleyebilen Ses Stüdyosu
+-GenericName[uk]=Аудіостудія з багатьма доріжками
++GenericName[uk]=Студійна програма для роботи з багатьма звуковими доріжками
+ GenericName[wa]=Situdio d' son a sacwantès bindes
+ GenericName[x-test]=xxMultitrack Audio Studioxx
+ GenericName[zh_CN]=多音轨音频工作室
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Multimedia/audacity.desktop kdebase-4.3.5/apps/kappfinder/apps/Multimedia/audacity.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Multimedia/audacity.desktop	2009-10-02 10:18:47.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Multimedia/audacity.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -161,7 +161,7 @@
+ GenericName[tg]=Таҳриргари аудио
+ GenericName[th]=โปรแกรมแก้ไขแฟ้มเสียง
+ GenericName[tr]=Ses Düzenleyicisi
+-GenericName[uk]=Редактор аудіо записів
++GenericName[uk]=Редактор аудіозаписів
+ GenericName[uz]=Audio tahrirchi
+ GenericName[uz@cyrillic]=Аудио таҳрирчи
+ GenericName[vi]=Bộ sửa âm thanh
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Multimedia/bcast2000.desktop kdebase-4.3.5/apps/kappfinder/apps/Multimedia/bcast2000.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Multimedia/bcast2000.desktop	2009-10-02 10:18:47.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Multimedia/bcast2000.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -159,7 +159,7 @@
+ GenericName[tg]=Аудио ва видеои IDE
+ GenericName[th]=เครื่องมือ IDE สำหรับวิดีโอและระบบเสียง
+ GenericName[tr]=Ses ve görüntü için tümleşik geliştirme ortamı
+-GenericName[uk]=Середовище розробки аудіо- та відеоматеріал
++GenericName[uk]=Середовище розробки аудіо- та відеоматеріалів
+ GenericName[uz]=Audio va video IDE
+ GenericName[uz@cyrillic]=Аудио ва видео IDE
+ GenericName[vi]=Môi trường phát triển tích hợp cho Âm thanh và Ảnh động
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Multimedia/rezound.desktop kdebase-4.3.5/apps/kappfinder/apps/Multimedia/rezound.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Multimedia/rezound.desktop	2009-10-02 10:18:47.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Multimedia/rezound.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -160,7 +160,7 @@
+ GenericName[tg]=Таҳриргари аудио
+ GenericName[th]=โปรแกรมแก้ไขแฟ้มเสียง
+ GenericName[tr]=Ses Düzenleyicisi
+-GenericName[uk]=Редактор аудіо записів
++GenericName[uk]=Редактор аудіозаписів
+ GenericName[uz]=Audio tahrirchi
+ GenericName[uz@cyrillic]=Аудио таҳрирчи
+ GenericName[vi]=Bộ sửa âm thanh
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Multimedia/sweep.desktop kdebase-4.3.5/apps/kappfinder/apps/Multimedia/sweep.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Multimedia/sweep.desktop	2009-10-02 10:18:47.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Multimedia/sweep.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -161,7 +161,7 @@
+ GenericName[tg]=Таҳриргари аудио
+ GenericName[th]=โปรแกรมแก้ไขแฟ้มเสียง
+ GenericName[tr]=Ses Düzenleyicisi
+-GenericName[uk]=Редактор аудіо записів
++GenericName[uk]=Редактор аудіозаписів
+ GenericName[uz]=Audio tahrirchi
+ GenericName[uz@cyrillic]=Аудио таҳрирчи
+ GenericName[vi]=Bộ sửa âm thanh
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Multimedia/xawtv.desktop kdebase-4.3.5/apps/kappfinder/apps/Multimedia/xawtv.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Multimedia/xawtv.desktop	2009-10-02 10:18:47.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Multimedia/xawtv.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -10,7 +10,7 @@
+ GenericName[bn_IN]=TV দেখুন!
+ GenericName[br]=Sell ouzh ar skinwell !
+ GenericName[ca]=Veure la TV!
+-GenericName[ca@valencia]=Vore la TV!
++GenericName[ca@valencia]=Veure la TV!
+ GenericName[cs]=Sledujte televizi!
+ GenericName[csb]=Òbzéranié TV!
+ GenericName[cy]=Gwyliwch Teledu! 
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Multimedia/xine.desktop kdebase-4.3.5/apps/kappfinder/apps/Multimedia/xine.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Multimedia/xine.desktop	2009-10-02 10:18:47.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Multimedia/xine.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -156,7 +156,7 @@
+ Name[si]=Xine
+ Name[sk]=Xine
+ Name[sl]=Xine
+-Name[sr]=Ксине
++Name[sr]=Ксин
+ Name[sr@latin]=Xine
+ Name[sv]=Xine
+ Name[ta]=சைன்
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Multimedia/xmms-enqueue.desktop kdebase-4.3.5/apps/kappfinder/apps/Multimedia/xmms-enqueue.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Multimedia/xmms-enqueue.desktop	2009-10-02 10:18:47.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Multimedia/xmms-enqueue.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -75,7 +75,7 @@
+ GenericName[tg]=Асбобҳои рӯйхати мусиқӣ
+ GenericName[th]=เครื่องมือรายการเล่น
+ GenericName[tr]=Çalma Listesi Aracı
+-GenericName[uk]=Засіб списку композицій
++GenericName[uk]=Інструмент роботи зі списками композицій
+ GenericName[uz]=Qoʻshiqlar roʻyxati uchun vosita
+ GenericName[uz@cyrillic]=Қўшиқлар рўйхати учун восита
+ GenericName[vi]=Công cụ danh mục nhạc
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Office/netscapeaddressbook.desktop kdebase-4.3.5/apps/kappfinder/apps/Office/netscapeaddressbook.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Office/netscapeaddressbook.desktop	2009-11-27 14:01:42.000000000 +0100
++++ kdebase-4.3.5/apps/kappfinder/apps/Office/netscapeaddressbook.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -4,6 +4,7 @@
+ Name[bg]=Адресник на Netscape
+ Name[bn_IN]=Netscape ঠিকানা বই
+ Name[ca]=Llibreta d'adreces de Netscape
++Name[ca@valencia]=Llibreta d'adreces de Netscape
+ Name[cs]=Kniha adres Netscape
+ Name[csb]=Adresowô ksążka Netscape
+ Name[da]=Netscape-adressebog
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Office/XAcc.desktop kdebase-4.3.5/apps/kappfinder/apps/Office/XAcc.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Office/XAcc.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Office/XAcc.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -156,15 +156,15 @@
+ GenericName[si]=පෞද්ගලික ගිණිම්කරණ මෙවලම
+ GenericName[sk]=Osobné účtovníctvo
+ GenericName[sl]=Orodje za osebno evidenco
+-GenericName[sr]=Алатка за лично рачуновођство
+-GenericName[sr@latin]=Alatka za lično računovođstvo
++GenericName[sr]=Алатка за лично рачуноводство
++GenericName[sr@latin]=Alatka za lično računovodstvo
+ GenericName[sv]=Personligt redovisningsverktyg
+ GenericName[ta]=தனிப்பட்ட கணக்கிடும் கருவி
+ GenericName[te]=వ్యక్తిగత జమాలెక్కల సాధనం
+ GenericName[tg]=Барномаи ҳисоботи шахсӣ
+ GenericName[th]=เครื่องมือทำบัญชีส่วนตัว
+ GenericName[tr]=Kişisel Muhasebe Aracı
+-GenericName[uk]=Засіб ведення особистих рахунків
++GenericName[uk]=Інструмент особистого фінансового обліку
+ GenericName[uz]=Shaxsiy hisob-kitob vositasi
+ GenericName[uz@cyrillic]=Шахсий ҳисоб-китоб воситаси
+ GenericName[vi]=Công cụ Kế toán Cá nhân
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Utilities/xutils/xclipboard.desktop kdebase-4.3.5/apps/kappfinder/apps/Utilities/xutils/xclipboard.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Utilities/xutils/xclipboard.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Utilities/xutils/xclipboard.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -10,7 +10,7 @@
+ Name[bn_IN]=X Clipboard
+ Name[br]=Golver X
+ Name[ca]=Porta-retalls X
+-Name[ca@valencia]=Portapapers X
++Name[ca@valencia]=Porta-retalls X
+ Name[cs]=X Clipboard
+ Name[csb]=X Tacnik
+ Name[cy]=X Gludfwrdd
+@@ -75,7 +75,7 @@
+ Name[tg]=X Clipboard
+ Name[th]=คลิปบอร์ด X
+ Name[tr]=X Panosu
+-Name[uk]=Кишеня X
++Name[uk]=Буфер даних X
+ Name[uz]=X klipbord
+ Name[uz@cyrillic]=X клипборд
+ Name[vi]=Bảng nháp X
+@@ -96,7 +96,7 @@
+ GenericName[bn_IN]=ক্লিপ-বোর্ডের তথ্য প্রদর্শন ব্যবস্থা
+ GenericName[br]=Gweler ar golver
+ GenericName[ca]=Visor del porta-retalls
+-GenericName[ca@valencia]=Visor del portapapers
++GenericName[ca@valencia]=Visor del porta-retalls
+ GenericName[cs]=Prohlížeč schránky
+ GenericName[csb]=Przezérnik tacnika
+ GenericName[cy]=Gwelydd Clipfwrdd 
+@@ -161,7 +161,7 @@
+ GenericName[tg]=Намоишгари барномаи нусхабардорӣ
+ GenericName[th]=ตัวแสดงเนื้อหาคลิปบอร์ด
+ GenericName[tr]=Pano Görüntüleyici
+-GenericName[uk]=Переглядач кишені
++GenericName[uk]=Переглядач буфера даних
+ GenericName[uz]=Klipbordni koʻruvchi
+ GenericName[uz@cyrillic]=Клипбордни кўрувчи
+ GenericName[vi]=Bộ xem bảng nháp
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Utilities/xutils/xclock.desktop kdebase-4.3.5/apps/kappfinder/apps/Utilities/xutils/xclock.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Utilities/xutils/xclock.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Utilities/xutils/xclock.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -80,7 +80,7 @@
+ Name[tg]=Соати X
+ Name[th]=นาฬิกา X
+ Name[tr]=X Saati
+-Name[uk]=X Clock
++Name[uk]=Годинник X
+ Name[uz]=X uchun soat
+ Name[uz@cyrillic]=X учун соат
+ Name[vi]=Đồng hồ X
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Utilities/xutils/xconsole.desktop kdebase-4.3.5/apps/kappfinder/apps/Utilities/xutils/xconsole.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Utilities/xutils/xconsole.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Utilities/xutils/xconsole.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -75,7 +75,7 @@
+ Name[tg]=Консол
+ Name[th]=คอนโซล X
+ Name[tr]=X Konsol
+-Name[uk]=X Console
++Name[uk]=Консоль X
+ Name[uz]=X uchun terminal
+ Name[uz@cyrillic]=X учун терминал
+ Name[vi]=Bàn điều khiển X
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Utilities/xutils/Xkill.desktop kdebase-4.3.5/apps/kappfinder/apps/Utilities/xutils/Xkill.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Utilities/xutils/Xkill.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Utilities/xutils/Xkill.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -76,7 +76,7 @@
+ Name[tg]=X Kill
+ Name[th]=ฆ่าหน้าต่าง X
+ Name[tr]=X Kill
+-Name[uk]=X Kill
++Name[uk]=Завершувач X
+ Name[uz]=X Kill
+ Name[uz@cyrillic]=X Kill
+ Name[vi]=Giết X
+@@ -159,7 +159,7 @@
+ GenericName[tg]=Барномаи пӯшидани тирезаҳо
+ GenericName[th]=เครื่องมือบังคับปิดหน้าต่าง
+ GenericName[tr]=Pencere Sonlandırma Aracı
+-GenericName[uk]=Засіб знищення вікон
++GenericName[uk]=Інструмент знищення вікон
+ GenericName[uz]=Oynani oʻldirish vositasi
+ GenericName[uz@cyrillic]=Ойнани ўлдириш воситаси
+ GenericName[vi]=Công cụ tắt cửa sổ
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Utilities/xutils/xload.desktop kdebase-4.3.5/apps/kappfinder/apps/Utilities/xutils/xload.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Utilities/xutils/xload.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Utilities/xutils/xload.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -82,7 +82,7 @@
+ Name[tg]=X Load
+ Name[th]=โหลดระบบ X
+ Name[tr]=X Load
+-Name[uk]=X Load
++Name[uk]=Навантаження X
+ Name[uz]=X Load
+ Name[uz@cyrillic]=X Load
+ Name[vi]=Tải X
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Utilities/xutils/Xrefresh.desktop kdebase-4.3.5/apps/kappfinder/apps/Utilities/xutils/Xrefresh.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Utilities/xutils/Xrefresh.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Utilities/xutils/Xrefresh.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -75,7 +75,7 @@
+ Name[tg]=X Refresh
+ Name[th]=X Refresh
+ Name[tr]=X Refresh
+-Name[uk]=X Refresh
++Name[uk]=Оновлення X
+ Name[uz]=X Refresh
+ Name[uz@cyrillic]=X Refresh
+ Name[vi]=Cập nhật X
+diff -Nur kdebase-4.3.4/apps/kappfinder/apps/Utilities/xutils/Xtraceroute.desktop kdebase-4.3.5/apps/kappfinder/apps/Utilities/xutils/Xtraceroute.desktop
+--- kdebase-4.3.4/apps/kappfinder/apps/Utilities/xutils/Xtraceroute.desktop	2009-10-02 10:18:48.000000000 +0200
++++ kdebase-4.3.5/apps/kappfinder/apps/Utilities/xutils/Xtraceroute.desktop	2010-01-21 21:47:52.000000000 +0100
+@@ -74,7 +74,7 @@
+ Name[tg]=X Traceroute
+ Name[th]=X Traceroute
+ Name[tr]=X Traceroute
+-Name[uk]=X Traceroute
++Name[uk]=Маршрут X
+ Name[uz]=X Traceroute
+ Name[uz@cyrillic]=X Traceroute
+ Name[vi]=Tìm đường X
+diff -Nur kdebase-4.3.4/apps/kdepasswd/kcm/kcm_useraccount.desktop kdebase-4.3.5/apps/kdepasswd/kcm/kcm_useraccount.desktop
+--- kdebase-4.3.4/apps/kdepasswd/kcm/kcm_useraccount.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/kdepasswd/kcm/kcm_useraccount.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -44,7 +44,7 @@
+ Name[he]=סיסמה וחשבון משתמש
+ Name[hi]=पासवर्ड तथा उपयोक्ता खाता
+ Name[hne]=पासवर्ड अउ कमइया खाता
+-Name[hr]=Lozinka i korisnički nalozi
++Name[hr]=Zaporka i korisnički račun
+ Name[hsb]=Hesło a konto wužiwarja
+ Name[hu]=Név és jelszó
+ Name[is]=Lykilorð og notandaaðgangur
+@@ -87,7 +87,7 @@
+ Name[tg]=Ҳисоботи корбар ва паролҳо
+ Name[th]=รหัสผ่านและบัญชีผู้ใช้
+ Name[tr]=Parola ve Kullanıcı Hesabı
+-Name[uk]=Пароль і рахунок користувача
++Name[uk]=Пароль і обліковий запис користувача
+ Name[uz]=Maxfiy soʻz va foydalanuvchi hisobi
+ Name[uz@cyrillic]=Махфий сўз ва фойдаланувчи ҳисоби
+ Name[vi]=Mật khẩu và Tài khoản Người dùng
+@@ -207,7 +207,7 @@
+ Comment[tg]=Иттилооти корбар монанди парол, ном ва почтаи электронӣ
+ Comment[th]=ข้อมูลของผู้ใช้ เช่น รหัสผ่าน, ชื่อ และอีเมล
+ Comment[tr]=Parola, isim ve e-posta gibi kullanıcı bilgileri
+-Comment[uk]=Інформація про користувача, зокрема: пароль, ім'я та адреса електронної пошти
++Comment[uk]=Дані про користувача: пароль, ім'я та адреса електронної пошти
+ Comment[uz]=Foydalanuvchining ismi, maxfiy soʻzi va elektron pochtasi kabi maʼlumot
+ Comment[uz@cyrillic]=Фойдаланувчининг исми, махфий сўзи ва электрон почтаси каби маълумот
+ Comment[vi]=Thông tin về người dùng như mật khẩu, tên và địa chỉ thư
+diff -Nur kdebase-4.3.4/apps/kdialog/kdialog.cpp kdebase-4.3.5/apps/kdialog/kdialog.cpp
+--- kdebase-4.3.4/apps/kdialog/kdialog.cpp	2009-10-02 10:18:54.000000000 +0200
++++ kdebase-4.3.5/apps/kdialog/kdialog.cpp	2010-01-21 21:47:56.000000000 +0100
+@@ -629,31 +629,37 @@
+         if (args->count() >= 1)  {
+             contextStr = args->arg(0);
+         }
+-        KIconLoader::Group group = KIconLoader::NoGroup;
+-        if ( groupStr == QLatin1String( "Desktop" ) )
+-            group = KIconLoader::Desktop;
+-        else if ( groupStr == QLatin1String( "Toolbar" ) )
+-            group = KIconLoader::Toolbar;
+-        else if ( groupStr == QLatin1String( "MainToolbar" ) )
+-            group = KIconLoader::MainToolbar;
+-        else if ( groupStr == QLatin1String( "Small" ) )
+-            group = KIconLoader::Small;
+-        else if ( groupStr == QLatin1String( "Panel" ) )
+-            group = KIconLoader::Panel;
+-        else if ( groupStr == QLatin1String( "User" ) )
+-            group = KIconLoader::User;
+-        KIconLoader::Context context = KIconLoader::Any;
+-        // From kicontheme.cpp
+-        if ( contextStr == QLatin1String( "Devices" ) )
+-            context = KIconLoader::Device;
+-        else if ( contextStr == QLatin1String( "MimeTypes" ) )
+-            context = KIconLoader::MimeType;
+-        else if ( contextStr == QLatin1String( "FileSystems" ) )
+-            context = KIconLoader::FileSystem;
+-        else if ( contextStr == QLatin1String( "Applications" ) )
+-            context = KIconLoader::Application;
+-        else if ( contextStr == QLatin1String( "Actions" ) )
+-            context = KIconLoader::Action;
++        const KIconLoader::Group group =
++            ( groupStr == QLatin1String( "Desktop" ) ) ?     KIconLoader::Desktop :
++            ( groupStr == QLatin1String( "Toolbar" ) ) ?     KIconLoader::Toolbar :
++            ( groupStr == QLatin1String( "MainToolbar" ) ) ? KIconLoader::MainToolbar :
++            ( groupStr == QLatin1String( "Small" ) ) ?       KIconLoader::Small :
++            ( groupStr == QLatin1String( "Panel" ) ) ?       KIconLoader::Panel :
++            ( groupStr == QLatin1String( "Dialog" ) ) ?      KIconLoader::Dialog :
++            ( groupStr == QLatin1String( "User" ) ) ?        KIconLoader::User :
++            /* else */                                       KIconLoader::NoGroup;
++
++        const KIconLoader::Context context =
++            ( contextStr == QLatin1String( "Action" ) ) ?        KIconLoader::Action :
++            ( contextStr == QLatin1String( "Application" ) ) ?   KIconLoader::Application :
++            ( contextStr == QLatin1String( "Device" ) ) ?        KIconLoader::Device :
++            ( contextStr == QLatin1String( "FileSystem" ) ) ?    KIconLoader::FileSystem :
++            ( contextStr == QLatin1String( "MimeType" ) ) ?      KIconLoader::MimeType :
++            ( contextStr == QLatin1String( "Animation" ) ) ?     KIconLoader::Animation :
++            ( contextStr == QLatin1String( "Category" ) ) ?      KIconLoader::Category :
++            ( contextStr == QLatin1String( "Emblem" ) ) ?        KIconLoader::Emblem :
++            ( contextStr == QLatin1String( "Emote" ) ) ?         KIconLoader::Emote :
++            ( contextStr == QLatin1String( "International" ) ) ? KIconLoader::International :
++            ( contextStr == QLatin1String( "Place" ) ) ?         KIconLoader::Place :
++            ( contextStr == QLatin1String( "StatusIcon" ) ) ?    KIconLoader::StatusIcon :
++            // begin: KDE3 compatibility (useful?)
++            ( contextStr == QLatin1String( "Devices" ) ) ?       KIconLoader::Device :
++            ( contextStr == QLatin1String( "MimeTypes" ) ) ?     KIconLoader::MimeType :
++            ( contextStr == QLatin1String( "FileSystems" ) ) ?   KIconLoader::FileSystem :
++            ( contextStr == QLatin1String( "Applications" ) ) ?  KIconLoader::Application :
++            ( contextStr == QLatin1String( "Actions" ) ) ?       KIconLoader::Action :
++            // end: KDE3 compatibility
++            /* else */                                           KIconLoader::Any;
+ 
+ 	KIconDialog dlg((QWidget*)0L);
+ 	kapp->setTopWidget( &dlg );
+diff -Nur kdebase-4.3.4/apps/keditbookmarks/actionsimpl.cpp kdebase-4.3.5/apps/keditbookmarks/actionsimpl.cpp
+--- kdebase-4.3.4/apps/keditbookmarks/actionsimpl.cpp	2008-11-12 17:37:10.000000000 +0100
++++ kdebase-4.3.5/apps/keditbookmarks/actionsimpl.cpp	2010-01-21 21:47:55.000000000 +0100
+@@ -564,7 +564,7 @@
+ void ActionsImpl::slotChangeIcon() {
+     KEBApp::self()->bkInfo()->commitChanges();
+     KBookmark bk = KEBApp::self()->firstSelected();
+-    QString newIcon = KIconDialog::getIcon(KIconLoader::Small, KIconLoader::FileSystem, false, 0, false, KEBApp::self());
++    const QString newIcon = KIconDialog::getIcon(KIconLoader::Small, KIconLoader::Place, false, 0, false, KEBApp::self());
+     if (newIcon.isEmpty())
+         return;
+     EditCommand *cmd = new EditCommand(bk.address(), -1, newIcon);
+diff -Nur kdebase-4.3.4/apps/keditbookmarks/main.cpp kdebase-4.3.5/apps/keditbookmarks/main.cpp
+--- kdebase-4.3.4/apps/keditbookmarks/main.cpp	2009-01-28 00:01:21.000000000 +0100
++++ kdebase-4.3.5/apps/keditbookmarks/main.cpp	2010-01-21 21:47:55.000000000 +0100
+@@ -199,6 +199,7 @@
+ 
+     if (askUser((gotFilenameArg ? filename : QString()), readonly)) {
+         KEBApp *toplevel = new KEBApp(filename, readonly, address, browser, caption, dbusObjectName);
++        toplevel->setAttribute(Qt::WA_DeleteOnClose);
+         toplevel->show();
+         return app.exec();
+     }
+diff -Nur kdebase-4.3.4/apps/keditbookmarks/toplevel.cpp kdebase-4.3.5/apps/keditbookmarks/toplevel.cpp
+--- kdebase-4.3.4/apps/keditbookmarks/toplevel.cpp	2008-11-12 17:37:10.000000000 +0100
++++ kdebase-4.3.5/apps/keditbookmarks/toplevel.cpp	2010-01-21 21:47:55.000000000 +0100
+@@ -572,6 +572,10 @@
+ }
+ 
+ KEBApp::~KEBApp() {
++
++    // Save again, just in case the user expanded/collapsed folders (#131127)
++    CurrentMgr::self()->notifyManagers();
++
+     s_topLevel = 0;
+     delete m_cmdHistory;
+     delete ActionsImpl::self();
+diff -Nur kdebase-4.3.4/apps/kinfocenter/nics/nic.desktop kdebase-4.3.5/apps/kinfocenter/nics/nic.desktop
+--- kdebase-4.3.4/apps/kinfocenter/nics/nic.desktop	2009-10-02 10:18:53.000000000 +0200
++++ kdebase-4.3.5/apps/kinfocenter/nics/nic.desktop	2010-01-21 21:47:55.000000000 +0100
+@@ -162,8 +162,8 @@
+ Comment[si]=ජාල මුහුණත් තොරතුරු
+ Comment[sk]=Informácie o sieťových rozhraniach
+ Comment[sl]=Podatki o omrežnih vmesnikih
+-Comment[sr]=Подаци о мрежним сучељима
+-Comment[sr@latin]=Podaci o mrežnim sučeljima
++Comment[sr]=подаци о мрежном сучељу
++Comment[sr@latin]=podaci o mrežnom sučelju
+ Comment[sv]=Information om nätverksgränssnitt
+ Comment[ta]=பிணைய இடைமுகப்பு தகவல்
+ Comment[te]=నెట్వర్క్ ఇంటర్ ఫెస్ సమాచారం
+diff -Nur kdebase-4.3.4/apps/konqueror/about/konq_aboutpage.desktop kdebase-4.3.5/apps/konqueror/about/konq_aboutpage.desktop
+--- kdebase-4.3.4/apps/konqueror/about/konq_aboutpage.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/about/konq_aboutpage.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -76,7 +76,7 @@
+ Name[tg]=Иттилоот дар бораи Konqueror
+ Name[th]=หน้าเกี่ยวกับ Konqueror 
+ Name[tr]=Konqueror Hakkında Sayfası
+-Name[uk]=Сторінка "Про" для Konqueror
++Name[uk]=Сторінка «Про програму» Konqueror
+ Name[uz]=Konqueror haqida sahifa
+ Name[uz@cyrillic]=Konqueror ҳақида саҳифа
+ Name[vi]=Trang giới thiệu về Konqueror
+diff -Nur kdebase-4.3.4/apps/konqueror/konqueror.desktop kdebase-4.3.5/apps/konqueror/konqueror.desktop
+--- kdebase-4.3.4/apps/konqueror/konqueror.desktop	2009-10-30 13:28:17.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/konqueror.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -163,7 +163,7 @@
+ Comment[tg]=Мудири файлҳои KDE ва Намоишгари Интернет
+ Comment[th]=จัดการแฟ้ม & เว็บเบราว์เซอร์ของ KDE
+ Comment[tr]=KDE Dosya Yöneticisi ve Web Tarayıcısı
+-Comment[uk]=Менеджер файлів KDE та навігатор Тенет
++Comment[uk]=Керування файлами KDE та навігатор інтернету
+ Comment[uz]=KDE uchun fayl boshqaruvchi va veb-brauzer
+ Comment[uz@cyrillic]=KDE учун файл бошқарувчи ва веб-браузер
+ Comment[vi]=Trình quản lý Tập tin và Duyệt mạng KDE
+diff -Nur kdebase-4.3.4/apps/konqueror/konquerorsu.desktop kdebase-4.3.5/apps/konqueror/konquerorsu.desktop
+--- kdebase-4.3.4/apps/konqueror/konquerorsu.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/konquerorsu.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -81,7 +81,7 @@
+ Name[tg]=Мудири файлҳо - Ҳолати корбари маҳсус
+ Name[th]=จัดการแฟ้ม - โหมดผู้ดูแลระบบ
+ Name[tr]=Dosya Yöneticisi - Yetkili Kullanıcı
+-Name[uk]=Менеджер файлів (режим адміністратора)
++Name[uk]=Керування файлами файлів (режим адміністратора)
+ Name[uz]=Fayl boshqaruvchisi (root)
+ Name[uz@cyrillic]=Файл бошқарувчиси (root)
+ Name[vi]=Bộ quản lý Tập tin - Chế độ siêu người dùng
+diff -Nur kdebase-4.3.4/apps/konqueror/kttsplugin/CMakeLists.txt kdebase-4.3.5/apps/konqueror/kttsplugin/CMakeLists.txt
+--- kdebase-4.3.4/apps/konqueror/kttsplugin/CMakeLists.txt	2009-10-30 13:28:17.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/kttsplugin/CMakeLists.txt	2010-01-21 21:47:53.000000000 +0100
+@@ -12,7 +12,7 @@
+         set(KDEWEBKIT_FOUND FALSE)
+ endif(DEPEND_PACKAGE_KdeWebKit)
+ 
+-MACRO_OPTIONAL_DEPEND_PACKAGE(WebKitPart "webkitpart")
++MACRO_OPTIONAL_DEPEND_PACKAGE(WebKitPart "kwebkitpart")
+ if(DEPEND_PACKAGE_WebKitPart)
+         macro_optional_find_package(WebKitPart QUIET)
+ else(DEPEND_PACKAGE_WebKitPart)
+diff -Nur kdebase-4.3.4/apps/konqueror/kttsplugin/khtmlkttsd.cpp kdebase-4.3.5/apps/konqueror/kttsplugin/khtmlkttsd.cpp
+--- kdebase-4.3.4/apps/konqueror/kttsplugin/khtmlkttsd.cpp	2009-10-30 13:28:17.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/kttsplugin/khtmlkttsd.cpp	2010-01-21 21:47:53.000000000 +0100
+@@ -36,7 +36,7 @@
+ #include <ktoolinvocation.h>
+ 
+ #ifdef HAVE_WEBKITKDE
+-#include <webkitpart.h>
++#include <kwebkitpart.h>
+ #include <QWebFrame>
+ #include <QWebView>
+ #endif
+@@ -113,7 +113,7 @@
+ #ifdef HAVE_WEBKITKDE
+     else
+     {
+-        WebKitPart *webkitPart = dynamic_cast<WebKitPart *>(part);
++        KWebKitPart *webkitPart = dynamic_cast<KWebKitPart *>(part);
+         if ( webkitPart )
+         {
+             if (supportsXhtml)
+diff -Nur kdebase-4.3.4/apps/konqueror/kttsplugin/khtmlkttsd.desktop kdebase-4.3.5/apps/konqueror/kttsplugin/khtmlkttsd.desktop
+--- kdebase-4.3.4/apps/konqueror/kttsplugin/khtmlkttsd.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/kttsplugin/khtmlkttsd.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -83,7 +83,7 @@
+ Name[tg]=Талаффузи матн
+ Name[th]=เปลี่ยนข้อความเป็นเสียงพูด
+ Name[tr]=Text-to-Speech
+-Name[uk]=Синтез мовлення з тексту
++Name[uk]=Синтез мовлення з тексту
+ Name[vi]=Văn bản sang Tiếng nói
+ Name[wa]=Tecse-viè-vwès
+ Name[x-test]=xxText-to-Speechxx
+@@ -161,7 +161,7 @@
+ Comment[tg]=Талаффузи матн дар саҳифаи ҷорӣ
+ Comment[th]=เปลี่ยนตัวหนังสือในหน้าปัจจุบันเป็นเสียง
+ Comment[tr]=Geçerli sayfadaki metni okur
+-Comment[uk]=Створює аудіо для тексту на поточній сторінці
++Comment[uk]=Озвучує текст на поточній сторінці
+ Comment[vi]=Trình nói văn bản trên trang hiện thời
+ Comment[wa]=Prodût on son pol tecse el pådje do moumint
+ Comment[x-test]=xxProduces audio output for text in the current pagexx
+diff -Nur kdebase-4.3.4/apps/konqueror/profile_kde_devel.desktop kdebase-4.3.5/apps/konqueror/profile_kde_devel.desktop
+--- kdebase-4.3.4/apps/konqueror/profile_kde_devel.desktop	2009-10-02 10:18:52.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/profile_kde_devel.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -75,7 +75,7 @@
+ Name[tg]=Тараққиёти KDE
+ Name[th]=พัฒนาโปรแกรม KDE
+ Name[tr]=KDE Geliştirme
+-Name[uk]=Розробка KDE
++Name[uk]=Розробка у KDE
+ Name[uz]=KDE uchun dasturlashtirish
+ Name[uz@cyrillic]=KDE учун дастурлаштириш
+ Name[vi]=Phát triển KDE
+diff -Nur kdebase-4.3.4/apps/konqueror/profile_tabbedbrowsing.desktop kdebase-4.3.5/apps/konqueror/profile_tabbedbrowsing.desktop
+--- kdebase-4.3.4/apps/konqueror/profile_tabbedbrowsing.desktop	2009-10-30 13:28:17.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/profile_tabbedbrowsing.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -33,7 +33,7 @@
+ Name[he]=גלישה בלשוניות
+ Name[hi]=टैब्ड ब्राउज़िंग
+ Name[hne]=टैब्ड ब्राउजिंग
+-Name[hr]=Pregledavanje u karticama
++Name[hr]=Pretraživanje u karticama
+ Name[hsb]=Tabulatorowe přelistowanje
+ Name[hu]=Lapozós böngésző
+ Name[is]=Flipavafur
+diff -Nur kdebase-4.3.4/apps/konqueror/profile_webbrowsing.desktop kdebase-4.3.5/apps/konqueror/profile_webbrowsing.desktop
+--- kdebase-4.3.4/apps/konqueror/profile_webbrowsing.desktop	2009-10-02 10:18:52.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/profile_webbrowsing.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -32,7 +32,7 @@
+ Name[he]=גלישה באינטרנט
+ Name[hi]=वेब ब्राउजिंग
+ Name[hne]=वेब ब्राउजिंग
+-Name[hr]=Pregledavanje Interneta
++Name[hr]=Pretraživanje Weba
+ Name[hsb]=Browsowanje
+ Name[hu]=Webböngésző
+ Name[is]=Flakk um vefinn
+@@ -75,7 +75,7 @@
+ Name[tg]=Намоишгари Интернет
+ Name[th]=เรียกดูหน้าเว็บ
+ Name[tr]=Web Tarama
+-Name[uk]=Навігація Тенет
++Name[uk]=Навігація інтернетом
+ Name[uz]=Veb koʻrish
+ Name[uz@cyrillic]=Веб кўриш
+ Name[vi]=Duyệt Mạng
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-ada-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-ada-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-ada-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-ada-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-c++h-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-c++h-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-c++h-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-c++h-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-ch-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-ch-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-ch-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-ch-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-c-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-c-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-c-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-c-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-c++-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-c++-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-c++-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-c++-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-css-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-css-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-css-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-css-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-diff-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-diff-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-diff-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-diff-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-html-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-html-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-html-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-html-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-java-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-java-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-java-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-java-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-log-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-log-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-log-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-log-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-makefile-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-makefile-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-makefile-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-makefile-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-pas-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-pas-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-pas-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-pas-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-perl-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-perl-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-perl-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-perl-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-python-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-python-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-python-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-python-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-tcl-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-tcl-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-tcl-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-tcl-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-tex-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-tex-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-tex-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-tex-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-xml-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-xml-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-xml-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-xml-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/quickprint/text-xslt-print.desktop kdebase-4.3.5/apps/konqueror/quickprint/text-xslt-print.desktop
+--- kdebase-4.3.4/apps/konqueror/quickprint/text-xslt-print.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/quickprint/text-xslt-print.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -37,7 +37,7 @@
+ Name[he]=הדפסה...
+ Name[hi]=छापें...
+ Name[hne]=छापव...
+-Name[hr]=Ispiši …
++Name[hr]=Ispis …
+ Name[hsb]=Ćišćeć...
+ Name[hu]=Nyomtatás...
+ Name[is]=Prenta...
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/cache.desktop kdebase-4.3.5/apps/konqueror/settings/kio/cache.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/kio/cache.desktop	2009-10-02 10:18:50.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/settings/kio/cache.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -172,7 +172,7 @@
+ Comment[tg]=Танзимоти системаи хотиравии саҳифаҳои Интернет
+ Comment[th]=ปรับแต่งการตั้งค่าระบบแคช
+ Comment[tr]=Web önbellek ayarlarını buradan yapabilirsiniz
+-Comment[uk]=Налаштування параметрів кешу Тенет
++Comment[uk]=Налаштування параметрів кешу сторінок інтернету
+ Comment[uz]=Veb-kesh moslamalarini moslash
+ Comment[uz@cyrillic]=Веб-кэш мосламаларини мослаш
+ Comment[vi]=Cấu hình thiết lập bộ nhớ tạm cho duyệt mạng
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/kcookiesmanagement.cpp kdebase-4.3.5/apps/konqueror/settings/kio/kcookiesmanagement.cpp
+--- kdebase-4.3.4/apps/konqueror/settings/kio/kcookiesmanagement.cpp	2009-05-06 12:13:36.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/settings/kio/kcookiesmanagement.cpp	2010-01-21 21:47:53.000000000 +0100
+@@ -31,7 +31,6 @@
+ #include <QtGui/QPushButton>
+ #include <QtGui/QLabel>
+ #include <QtCore/QTimer>
+-#include <QtCore/QDate>
+ #include <QtGui/QToolButton>
+ #include <QtGui/QBoxLayout>
+ #include <QtCore/QList>
+@@ -46,6 +45,7 @@
+ #include <klineedit.h>
+ #include <kmessagebox.h>
+ #include <kurl.h>
++#include <kdatetime.h>
+ 
+ // Local
+ #include "kcookiesmain.h"
+@@ -335,13 +335,13 @@
+   if (c == fieldVal.end()) // empty list, do not crash
+     return false;
+   cookie->value = *c++;
+-  unsigned tmp = (*c++).toUInt();
++  qint64 tmp = (*c++).toLongLong();
+ 
+   if( tmp == 0 )
+     cookie->expireDate = i18n("End of session");
+   else
+   {
+-    QDateTime expDate;
++    KDateTime expDate;
+     expDate.setTime_t(tmp);
+     cookie->expireDate = KGlobal::locale()->formatDateTime(expDate);
+   }
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/netpref.desktop kdebase-4.3.5/apps/konqueror/settings/kio/netpref.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/kio/netpref.desktop	2009-10-02 10:18:50.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/settings/kio/netpref.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -170,7 +170,7 @@
+ Comment[tg]=Танзимоти хусусиятҳои шабака, монанди арзиши вақти фаъол
+ Comment[th]=ปรับแต่งค่าระบบเครือข่ายทั่วไป เช่น ค่าหมดเวลา เป็นต้น
+ Comment[tr]=Zaman aşımı değerleri gibi genel ağ tercihlerini yapılandır
+-Comment[uk]=Налаштування загальних параметрів мережі, таких як значення тайм-аутів
++Comment[uk]=Налаштування загальних параметрів мережі, зокрема значень тайм-аутів
+ Comment[uz]=Taymaut qiymatiga oʻxshagan tarmoq parametrlarni moslash
+ Comment[uz@cyrillic]=Таймаут қийматига ўхшаган тармоқ параметрларни мослаш
+ Comment[vi]=Cấu hình tùy thích mạng giống loài, như giá trị thời hạn
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/android10.desktop kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/android10.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/android10.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/android10.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -4,6 +4,7 @@
+ Name[bg]=UADescription (Android Phone 1.0)
+ Name[bn_IN]=UADescription (Android Phone 1.0)
+ Name[ca]=Descripció AU (Android Phone 1.0)
++Name[ca@valencia]=Descripció AU (Android Phone 1.0)
+ Name[cs]=Popis agenta (Android Phone 1.0)
+ Name[csb]=Òpisënk programë brëkòwnika (Android Phone 1.0)
+ Name[da]=Brugeragentbeskrivelse (Android Phone 1.0)
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/chrome10onwinnt51.desktop kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/chrome10onwinnt51.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/chrome10onwinnt51.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/chrome10onwinnt51.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -4,6 +4,7 @@
+ Name[bg]=UADescription (Google Chrome 1.0 в Windows XP)
+ Name[bn_IN]=UADescription (Windows XP-র মধ্যে Google Chrome 1.0)
+ Name[ca]=Descripció AU (Google Chrome 1.0 a Windows XP)
++Name[ca@valencia]=Descripció AU (Google Chrome 1.0 a Windows XP)
+ Name[cs]=Popis agenta (Google Chrome 1.0 on Windows XP)
+ Name[csb]=Òpisënk programë brëkòwnika (Google Chrome 1.0 na Windows XP)
+ Name[da]=Brugeragentbeskrivelse (Google Chrome 1.0 på Windows XP)
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/firefox30oncurrent.desktop kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/firefox30oncurrent.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/firefox30oncurrent.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/firefox30oncurrent.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -4,6 +4,7 @@
+ Name[bg]=UADescription (Firefox 3.0 на текущата система)
+ Name[bn_IN]=UADescription (সাম্প্রতিক সংস্করণের মধ্যে Firefox 3.0)
+ Name[ca]=Descripció AU (Firefox 3.0 a l'actual)
++Name[ca@valencia]=Descripció AU (Firefox 3.0 a l'actual)
+ Name[cs]=Popis agenta (Firefox 3.0 on current)
+ Name[csb]=Òpisënk programë brëkòwnika (FireFox 3.0)
+ Name[da]=Brugeragentbeskrivelse (Firefox 3.0 på nuværende)
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/ie70onwinnt51.desktop kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/ie70onwinnt51.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/ie70onwinnt51.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/ie70onwinnt51.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -4,6 +4,7 @@
+ Name[bg]=UADescription (IE 7.0 на Win XP)
+ Name[bn_IN]=UADescription (Win XP-র মধ্যে IE 7.0)
+ Name[ca]=Descripció AU (IE 7.0 en Win XP)
++Name[ca@valencia]=Descripció AU (IE 7.0 en Win XP)
+ Name[cs]=Popis agenta (IE 7.0 on Win XP)
+ Name[csb]=Òpisënk programë brëkòwnika (IE 7.0 na Win XP)
+ Name[da]=Brugeragentbeskrivelse (IE 7.0 på Win XP)
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/nn301oncurrent.desktop kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/nn301oncurrent.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/nn301oncurrent.desktop	2009-10-02 10:18:50.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/nn301oncurrent.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -73,7 +73,7 @@
+ Name[tg]=UADescription (NN 3.01 on current)
+ Name[th]=UADescription (NN 3.01 บนระบบปัจจุบัน)
+ Name[tr]=Kullanıcı Uygulaması Tanımı (geçerli işletim sistemi üzerinde NN 3.01)
+-Name[uk]=UADescription (NN 3.01  на поточній ОС)
++Name[uk]=UADescription (NN 3.01 на поточній ОС)
+ Name[uz]=UADescription (joriy bilan NN 3.01)
+ Name[uz@cyrillic]=UADescription (жорий билан NN 3.01)
+ Name[vi]=Mô tả UA (NN 3.01 trên hệ thống hiện thời)
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/nn475oncurrent.desktop kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/nn475oncurrent.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/nn475oncurrent.desktop	2009-10-02 10:18:50.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/nn475oncurrent.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -73,7 +73,7 @@
+ Name[tg]=UADescription (NN 4.76 on current)
+ Name[th]=UADescription (NN 4.76 บนระบบปัจจุบัน)
+ Name[tr]=Kullanıcı Uygulaması Tanımı (geçerli işletim sistemi üzerinde NN 4.76)
+-Name[uk]=UADescription (NN 4.76  на поточній ОС)
++Name[uk]=UADescription (NN 4.76 на поточній ОС)
+ Name[uz]=UADescription (joriy bilan NN 4.76)
+ Name[uz@cyrillic]=UADescription (жорий билан NN 4.76)
+ Name[vi]=Mô tả UA (NN 4.76 trên hệ thống hiện thời)
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/ns71oncurrent.desktop kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/ns71oncurrent.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/ns71oncurrent.desktop	2009-10-02 10:18:50.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/ns71oncurrent.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -72,7 +72,7 @@
+ Name[tg]=UADescription (Netscape 7.1 on current)
+ Name[th]=UADescription (เน็ตสเคป 7.1 บนระบบปัจจุบัน)
+ Name[tr]=Kullanıcı Uygulaması Tanımı (Netscape 7.1)
+-Name[uk]=UADescription (Netscape 7.1 on current)
++Name[uk]=UADescription (Netscape 7.1 на поточній)
+ Name[uz]=UADescription (joriy bilan Netscape 7.1)
+ Name[uz@cyrillic]=UADescription (жорий билан Netscape 7.1)
+ Name[vi]=Mô tả UA (Netscape 7.1 trên hệ thống hiện thời)
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/ns71onwinnt51.desktop kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/ns71onwinnt51.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/ns71onwinnt51.desktop	2009-10-02 10:18:50.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/ns71onwinnt51.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -73,7 +73,7 @@
+ Name[tg]=UADescription (Netscape 7.1 дар XP)
+ Name[th]=UADescription (เน็ตสเคป 7.1 บน XP)
+ Name[tr]=Kullanıcı Uygulaması Tanımı (XP üzerinde Netscape 7.1)
+-Name[uk]=UADescription (Netscape 7.1 on XP)
++Name[uk]=UADescription (Netscape 7.1 на XP)
+ Name[uz]=UADescription (Windows XP bilan Netscape 7.1)
+ Name[uz@cyrillic]=UADescription (Windows XP билан Netscape 7.1)
+ Name[vi]=Mô tả UA (Netscape 7.1 trên Win XP)
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/op962oncurrent.desktop kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/op962oncurrent.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/op962oncurrent.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/op962oncurrent.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -4,6 +4,7 @@
+ Name[bg]=UADescription (Opera 9.62 на текущата система)
+ Name[bn_IN]=UADescription (সাম্প্রতিক সংস্করণের মধ্যে Opera 9.62)
+ Name[ca]=Descripció AU (Opera 9.62 a l'actual)
++Name[ca@valencia]=Descripció AU (Opera 9.62 a l'actual)
+ Name[cs]=Popis agenta (Opera 9.62 na aktuálním)
+ Name[csb]=Òpisënk programë brëkòwnika (Opera 9.62)
+ Name[da]=Brugeragentbeskrivelse (Opera 9.62 på nuværende)
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/safari30oniphone.desktop kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/safari30oniphone.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/safari30oniphone.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/safari30oniphone.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -4,6 +4,7 @@
+ Name[bg]=UADescription (Safari 3.0 на iPhone)
+ Name[bn_IN]=UADescription (iPhone-র মধ্যে Safari 3.0)
+ Name[ca]=Descripció AU (Safari 3.0 a iPhone)
++Name[ca@valencia]=Descripció AU (Safari 3.0 a iPhone)
+ Name[cs]=Popis agenta (Safari 3.0 na iPhone)
+ Name[csb]=Òpisënk programë brëkòwnika (Safari 3.0 na iPhone)
+ Name[da]=Brugeragentbeskrivelse (Safari 3.0 på iPhone)
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/safari32.desktop kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/safari32.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/safari32.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/safari32.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -4,6 +4,7 @@
+ Name[bg]=UADescription (Safari 3.2 на MacOS X)
+ Name[bn_IN]=UADescription (MacOS X-র মধ্যে Safari 3.2)
+ Name[ca]=Descripció AU (Safari 3.2 a MacOS X)
++Name[ca@valencia]=Descripció AU (Safari 3.2 a MacOS X)
+ Name[cs]=Popis agenta (Safari 3.2 na MacOS X)
+ Name[csb]=Òpisënk programë brëkòwnika(Safari 3.2 na MacOS X)
+ Name[da]=Brugeragentbeskrivelse (Safari 3.2 på MacOS X)
+@@ -52,7 +53,7 @@
+ Name[sv]=AA-beskrivning (Safari 3.2 på MacOS X)
+ Name[tg]=UADescription (Safari 3.2 дар MacOS X)
+ Name[tr]=Kullanıcı Uygulaması Tanımı (MacOS X'de Safari 1.2)
+-Name[uk]=UADescription (Safari 3.2 у MacOS X)
++Name[uk]=UADescription (Safari 3.2 на MacOS X)
+ Name[wa]=Idintifiaedje do betchteu (Safari 3.2 so MacOS X)
+ Name[x-test]=xxUADescription (Safari 3.2 on MacOS X)xx
+ Name[zh_CN]=用户代理描述(运行于 MacOS X 的 Safari 3.2)
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/wgetoncurrent.desktop kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/wgetoncurrent.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/kio/uasproviders/wgetoncurrent.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/settings/kio/uasproviders/wgetoncurrent.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -4,6 +4,7 @@
+ Name[bg]=UADescription (Wget 1.11.4)
+ Name[bn_IN]=UADescription (Wget 1.11.4)
+ Name[ca]=Descripció AU (Wget 1.11.4)
++Name[ca@valencia]=Descripció AU (Wget 1.11.4)
+ Name[cs]=Popis agenta (Wget 1.11.4)
+ Name[csb]=Òpisënk programë brëkòwnika (Wget 1.11.4)
+ Name[da]=Brugeragentbeskrivelse (Wget 1.11.4)
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/konq/fileappearance.desktop kdebase-4.3.5/apps/konqueror/settings/konq/fileappearance.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/konq/fileappearance.desktop	2009-10-02 10:18:50.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/settings/konq/fileappearance.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -171,7 +171,7 @@
+ Comment[tg]=Танзимоти намуди зохирии Konqueror монанди мудири файлҳо
+ Comment[th]=คุณสามารถปรับแต่งว่าจะให้ Konqueror หน้าตาเป็นอย่างไรในการเป็นเครื่องมือจัดการแฟ้มได้ที่นี่
+ Comment[tr]=Konqueror uygulamasının dosya yöneticisi olarak nasıl görüneceğini buradan yapılandırabilirsiniz
+-Comment[uk]=Тут можна налаштувати вигляд Konqeror, як менеджера сеансу
++Comment[uk]=Тут можна налаштувати вигляд Konqueror, як інструменту керування файлами
+ Comment[uz]=Konqueror fayl boshqaruvchisi sifatida qanday koʻrinishini moslash
+ Comment[uz@cyrillic]=Konqueror файл бошқарувчиси сифатида қандай кўринишини мослаш
+ Comment[vi]=Bạn có thể cấu hình ngoại hình của Konqueror trông như nào khi quản lý tập tin ở đây
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/konq/filebehavior.desktop kdebase-4.3.5/apps/konqueror/settings/konq/filebehavior.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/konq/filebehavior.desktop	2009-10-02 10:18:50.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/settings/konq/filebehavior.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -171,7 +171,7 @@
+ Comment[tg]=Шумо метавонед барномаи Konqueror ҳамчун мудири файлҳо танзим кунед
+ Comment[th]=คุณสามารถปรับแต่งพฤติกรรมของ Konqueror ในการเป็นเครื่องมือจัดการแฟ้มได้ที่นี่
+ Comment[tr]=Konqueror uygulamasının dosya yöneticisi olarak nasıl davranacağını buradan yapılandırabilirsiniz
+-Comment[uk]=Тут можна налаштувати поведінку Konqueror, як менеджера сеансу
++Comment[uk]=Тут можна налаштувати поведінку Konqueror, як інструменту керування файлами
+ Comment[uz]=Konqueror fayl boshqaruvchisi sifatida xususiyatini moslash
+ Comment[uz@cyrillic]=Konqueror файл бошқарувчиси сифатида хусусиятини мослаш
+ Comment[vi]=Bạn có thể cấu hình cách Konqueror hoạt động như một trình quản lý tập tin ở đây
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/konq/globalpaths.cpp kdebase-4.3.5/apps/konqueror/settings/konq/globalpaths.cpp
+--- kdebase-4.3.4/apps/konqueror/settings/konq/globalpaths.cpp	2009-10-30 13:28:17.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/settings/konq/globalpaths.cpp	2010-01-21 21:47:53.000000000 +0100
+@@ -329,6 +329,12 @@
+         return true;
+     if (!QFile::exists(src.toLocalFile()))
+         return true;
++    // Do not move $HOME! #193057
++    const QString translatedPath = translatePath(src.toLocalFile());
++    if (translatedPath == "$HOME" || translatedPath == "$HOME/") {
++        return true;
++    }
++
+     m_ok = true;
+     // TODO: check if the src dir is empty? Nothing to move, then...
+ 
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/konq/webappearance.desktop kdebase-4.3.5/apps/konqueror/settings/konq/webappearance.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/konq/webappearance.desktop	2009-10-02 10:18:50.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/settings/konq/webappearance.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -172,7 +172,7 @@
+ Comment[tg]=Танзимоти намуди зохирии Konqueror монанди мудири файлҳо
+ Comment[th]=คุณสามารถปรับแต่งว่าจะให้ Konqueror หน้าตาเป็นอย่างไรในการเป็นเครื่องมือจัดการแฟ้มได้ที่นี่
+ Comment[tr]=Konqueror uygulamasının dosya yöneticisi olarak nasıl görüneceğini buradan yapılandırabilirsiniz
+-Comment[uk]=Тут можна налаштувати вигляд Konqeror, як менеджера сеансу
++Comment[uk]=Тут можна налаштувати вигляд Konqueror, як інструменту керування файлами
+ Comment[uz]=Konqueror fayl boshqaruvchisi sifatida qanday koʻrinishini moslash
+ Comment[uz@cyrillic]=Konqueror файл бошқарувчиси сифатида қандай кўринишини мослаш
+ Comment[vi]=Bạn có thể cấu hình ngoại hình của Konqueror trông như nào khi quản lý tập tin ở đây
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/konq/webbehavior.desktop kdebase-4.3.5/apps/konqueror/settings/konq/webbehavior.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/konq/webbehavior.desktop	2009-10-02 10:18:50.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/settings/konq/webbehavior.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -172,7 +172,7 @@
+ Comment[tg]=Шумо метавонед барномаи Konqueror ҳамчун мудири файлҳо танзим кунед
+ Comment[th]=คุณสามารถปรับแต่งพฤติกรรมของ Konqueror ในการเป็นเครื่องมือจัดการแฟ้มได้ที่นี่
+ Comment[tr]=Konqueror uygulamasının dosya yöneticisi olarak nasıl davranacağını buradan yapılandırabilirsiniz
+-Comment[uk]=Тут можна налаштувати поведінку Konqueror, як менеджера сеансу
++Comment[uk]=Тут можна налаштувати поведінку Konqueror, як інструменту керування файлами
+ Comment[uz]=Konqueror fayl boshqaruvchisi sifatida xususiyatini moslash
+ Comment[uz@cyrillic]=Konqueror файл бошқарувчиси сифатида хусусиятини мослаш
+ Comment[vi]=Bạn có thể cấu hình cách Konqueror hoạt động như một trình quản lý tập tin ở đây
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/konqhtml/css/kcmcss.desktop kdebase-4.3.5/apps/konqueror/settings/konqhtml/css/kcmcss.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/konqhtml/css/kcmcss.desktop	2009-10-02 10:18:50.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/settings/konqhtml/css/kcmcss.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -170,7 +170,7 @@
+ Comment[tg]=Танзимоти услубҳое, ки ҳангоми намоиши саҳифаи Интернет истифода мешаванд
+ Comment[th]=ปรับแต่งสไตล์ชีตที่ใช้ในการแสดงผล HTML
+ Comment[tr]=Web sayfaları hazırlanırken kullanılacak biçim ayarlarını yapılandırın
+-Comment[uk]=Налаштування таблиць стилів для показу сторінок Тенет
++Comment[uk]=Налаштування таблиць стилів для показу сторінок інтернету
+ Comment[uz]=Veb-sahifalarni koʻrsatishda ishlatiladigan CSS uslublarini moslash
+ Comment[uz@cyrillic]=Веб-саҳифаларни кўрсатишда ишлатиладиган CSS услубларини мослаш
+ Comment[vi]=Cấu hình kiểu dáng mẫu được dùng để vẽ trang mạng
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/konqhtml/khtml_behavior.desktop kdebase-4.3.5/apps/konqueror/settings/konqhtml/khtml_behavior.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/konqhtml/khtml_behavior.desktop	2009-07-21 17:18:20.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/settings/konqhtml/khtml_behavior.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -85,7 +85,7 @@
+ Name[tg]=Ҳолати Интернет
+ Name[th]=พฤติกรรมของเว็บ
+ Name[tr]=Web Davranışı
+-Name[uk]=Поведінка Навігатора
++Name[uk]=Поведінка навігатора інтернету
+ Name[uz]=Veb xususiyatlari
+ Name[uz@cyrillic]=Веб хусусиятлари
+ Name[vi]=Ứng xử Mạng
+diff -Nur kdebase-4.3.4/apps/konqueror/settings/konqhtml/khtml_general.desktop kdebase-4.3.5/apps/konqueror/settings/konqhtml/khtml_general.desktop
+--- kdebase-4.3.4/apps/konqueror/settings/konqhtml/khtml_general.desktop	2009-11-27 14:01:43.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/settings/konqhtml/khtml_general.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -15,6 +15,7 @@
+ Name[bg]=Общи
+ Name[bn_IN]=সাধারণ
+ Name[ca]=General
++Name[ca@valencia]=General
+ Name[cs]=Obecné
+ Name[csb]=Spòdlowò
+ Name[da]=Generelt
+diff -Nur kdebase-4.3.4/apps/konqueror/shellcmdplugin/kshellcmdplugin.desktop kdebase-4.3.5/apps/konqueror/shellcmdplugin/kshellcmdplugin.desktop
+--- kdebase-4.3.4/apps/konqueror/shellcmdplugin/kshellcmdplugin.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/shellcmdplugin/kshellcmdplugin.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -85,7 +85,7 @@
+ Name[tg]=Иҷрои фармон
+ Name[th]=โปรแกรมเสริมสำหรับป้อนคำสั่งเชลล์
+ Name[tr]=Uçbirim Komut Eklentisi
+-Name[uk]=Втулок командної оболонки
++Name[uk]=Додаток командної оболонки
+ Name[vi]=Bổ sung lệnh trình bao
+ Name[wa]=Tchôke-divins roye di comande
+ Name[x-test]=xxShell Command Pluginxx
+@@ -165,7 +165,7 @@
+ Comment[tg]=Иҷрои фармон аз Konqueror
+ Comment[th]=โปรแกรมเสริมป้อนคำสั่งเชลล์สำหรับของ Konqueror
+ Comment[tr]=Konqueror için Uçbirim Komut Eklentisi
+-Comment[uk]=Втулок командної оболонки для Konqueror
++Comment[uk]=Додаток командної оболонки для Konqueror
+ Comment[vi]=Trình bổ sung khả năng dòng lệnh cho trình duyệt Konqueror
+ Comment[wa]=Tchôke-divins roye di comande po Konqueror
+ Comment[x-test]=xxShell Command Plugin for Konquerorxx
+diff -Nur kdebase-4.3.4/apps/konqueror/sidebar/trees/history_module/kcmhistory.desktop kdebase-4.3.5/apps/konqueror/sidebar/trees/history_module/kcmhistory.desktop
+--- kdebase-4.3.4/apps/konqueror/sidebar/trees/history_module/kcmhistory.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/sidebar/trees/history_module/kcmhistory.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -74,8 +74,8 @@
+ Name[si]=අතීත පැතිතීරුව
+ Name[sk]=Bočný panel histórie
+ Name[sl]=Stranska vrstica zgodovine
+-Name[sr]=Бочни историјат
+-Name[sr@latin]=Bočni istorijat
++Name[sr]=Бочна трака историјата
++Name[sr@latin]=Bočna traka istorijata
+ Name[sv]=Historiksidopanel
+ Name[ta]=வரலாற்று பக்கப்பட்டி
+ Name[te]=చరిత్ర సైడ్‌బార్
+@@ -158,8 +158,8 @@
+ Comment[si]=අතීත පැතිතීරුව සැකසීම
+ Comment[sk]=Nastavenie bočného panelu histórie
+ Comment[sl]=Nastavitve stranske vrstice zgodovine
+-Comment[sr]=Подешавање бочног историјата
+-Comment[sr@latin]=Podešavanje bočnog istorijata
++Comment[sr]=Подешавање бочне траке историјата
++Comment[sr@latin]=Podešavanje bočne trake istorijata
+ Comment[sv]=Anpassa historiksidopanelen
+ Comment[ta]=வரலாறு பக்கப்பட்டியை வடிவமை
+ Comment[te]=చరిత్ర సైడ్‌బార్ ఆకృతీకరించుము
+diff -Nur kdebase-4.3.4/apps/konqueror/sidebar/trees/init/bookmarks.desktop kdebase-4.3.5/apps/konqueror/sidebar/trees/init/bookmarks.desktop
+--- kdebase-4.3.4/apps/konqueror/sidebar/trees/init/bookmarks.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/sidebar/trees/init/bookmarks.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -163,7 +163,7 @@
+ Comment[tg]=Список закладок для быстрого доступа
+ Comment[th]=นี่เป็นรายการที่คั่นหน้าของคุณ เพื่อการเรียกใช้อย่างรวดเร็ว
+ Comment[tr]=Bu sizin daha hızlı erişiminiz için kısa yollarınızın bir listesidir
+-Comment[uk]=Це - список ваших закладок для швидкого доступу
++Comment[uk]=Це список ваших закладок для швидкого доступу
+ Comment[uz]=Xatchoʻplar roʻyxati
+ Comment[uz@cyrillic]=Хатчўплар рўйхати
+ Comment[vi]=Đây là danh sách tất cả các địa chỉ đã lưu của bạn, giúp cho truy cập nhanh hơn
+diff -Nur kdebase-4.3.4/apps/konqueror/sidebar/trees/init/bookmarks_module.desktop kdebase-4.3.5/apps/konqueror/sidebar/trees/init/bookmarks_module.desktop
+--- kdebase-4.3.4/apps/konqueror/sidebar/trees/init/bookmarks_module.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/sidebar/trees/init/bookmarks_module.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -163,7 +163,7 @@
+ Comment[tg]=Список закладок для быстрого доступа
+ Comment[th]=นี่เป็นรายการที่คั่นหน้าของคุณ เพื่อการเรียกใช้อย่างรวดเร็ว
+ Comment[tr]=Bu sizin daha hızlı erişiminiz için kısa yollarınızın bir listesidir
+-Comment[uk]=Це - список ваших закладок для швидкого доступу
++Comment[uk]=Це список ваших закладок для швидкого доступу
+ Comment[uz]=Xatchoʻplar roʻyxati
+ Comment[uz@cyrillic]=Хатчўплар рўйхати
+ Comment[vi]=Đây là danh sách tất cả các địa chỉ đã lưu của bạn, giúp cho truy cập nhanh hơn
+diff -Nur kdebase-4.3.4/apps/konqueror/sidebar/trees/init/history.desktop kdebase-4.3.5/apps/konqueror/sidebar/trees/init/history.desktop
+--- kdebase-4.3.4/apps/konqueror/sidebar/trees/init/history.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/sidebar/trees/init/history.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -79,7 +79,7 @@
+ Name[tg]=Таърих
+ Name[th]=ประวัติการใช้
+ Name[tr]=Geçmiş
+-Name[uk]=Історія
++Name[uk]=Журнал
+ Name[uz]=Tarix
+ Name[uz@cyrillic]=Тарих
+ Name[vi]=Lịch sử
+@@ -162,7 +162,7 @@
+ Comment[tg]=Журнал недавно посещённых адресов. Его можно настраивать по своему усмотрению.
+ Comment[th]=นี่เป็นประวัติเก็บที่อยู่ URL ที่คุณเคยเรียกใช้มาก่อน โดยคุณสามารถเรียงลำดับมันได้ในหลายรูปแบบ
+ Comment[tr]=Bu sizim yakın geçmişte ziyaret ettiğiniz adreslerin bir listesidir. Bunları bir çok şekilde sıralayabilirsiniz.
+-Comment[uk]=Це - історія URL, які ви недавно відвідали. Ви можете також впорядкувати її будь-яким чином.
++Comment[uk]=Це журнал адрес URL, які ви недавно відвідали. Ви можете впорядкувати його у один з декількох способів.
+ Comment[uz]=Yaqinda koʻrgan URL'larning tarixi. Ularni turlicha saralashingiz mumkin
+ Comment[uz@cyrillic]=Яқинда кўрган URL'ларнинг тарихи. Уларни турлича саралашингиз мумкин
+ Comment[vi]=Đây là danh sách các địa chỉ URL bạn đã xem gần đây. Bạn có thể sắp xếp lại chúng theo vài cách khác nhau.
+diff -Nur kdebase-4.3.4/apps/konqueror/sidebar/trees/init/history_module.desktop kdebase-4.3.5/apps/konqueror/sidebar/trees/init/history_module.desktop
+--- kdebase-4.3.4/apps/konqueror/sidebar/trees/init/history_module.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/sidebar/trees/init/history_module.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -79,7 +79,7 @@
+ Name[tg]=Таърих
+ Name[th]=ประวัติการใช้
+ Name[tr]=Geçmiş
+-Name[uk]=Історія
++Name[uk]=Журнал
+ Name[uz]=Tarix
+ Name[uz@cyrillic]=Тарих
+ Name[vi]=Lịch sử
+@@ -162,7 +162,7 @@
+ Comment[tg]=Журнал недавно посещённых адресов. Его можно настраивать по своему усмотрению.
+ Comment[th]=นี่เป็นประวัติเก็บที่อยู่ URL ที่คุณเคยเรียกใช้มาก่อน โดยคุณสามารถเรียงลำดับมันได้ในหลายรูปแบบ
+ Comment[tr]=Bu sizim yakın geçmişte ziyaret ettiğiniz adreslerin bir listesidir. Bunları bir çok şekilde sıralayabilirsiniz.
+-Comment[uk]=Це - історія URL, які ви недавно відвідали. Ви можете також впорядкувати її будь-яким чином.
++Comment[uk]=Це журнал адрес URL, які ви недавно відвідали. Ви можете впорядкувати його у один з декількох способів.
+ Comment[uz]=Yaqinda koʻrgan URL'larning tarixi. Ularni turlicha saralashingiz mumkin
+ Comment[uz@cyrillic]=Яқинда кўрган URL'ларнинг тарихи. Уларни турлича саралашингиз мумкин
+ Comment[vi]=Đây là danh sách các địa chỉ URL bạn đã xem gần đây. Bạn có thể sắp xếp lại chúng theo vài cách khác nhau.
+diff -Nur kdebase-4.3.4/apps/konqueror/sidebar/trees/init/home.desktop kdebase-4.3.5/apps/konqueror/sidebar/trees/init/home.desktop
+--- kdebase-4.3.4/apps/konqueror/sidebar/trees/init/home.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/sidebar/trees/init/home.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -162,7 +162,7 @@
+ Comment[tg]=Ҷузвдони файлҳои шахсӣ
+ Comment[th]=โฟลเดอร์นี้บรรจุแฟ้มส่วนตัวต่าง ๆ ของคุณ
+ Comment[tr]=Bu dizin kişisel dosyalarınızı içerir
+-Comment[uk]=Ця тека містить ваші персональні файли
++Comment[uk]=Ця тека містить ваші особисті файли
+ Comment[uz]=Bu jild sizning shaxsiy fayllaringizdan iborat
+ Comment[uz@cyrillic]=Бу жилд сизнинг шахсий файлларингиздан иборат
+ Comment[vi]=Thư mục này chứa các tập tin cá nhân của bạn
+diff -Nur kdebase-4.3.4/apps/konqueror/sidebar/trees/init/remote/ftp/kde_ftp.desktop kdebase-4.3.5/apps/konqueror/sidebar/trees/init/remote/ftp/kde_ftp.desktop
+--- kdebase-4.3.4/apps/konqueror/sidebar/trees/init/remote/ftp/kde_ftp.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/sidebar/trees/init/remote/ftp/kde_ftp.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -78,7 +78,7 @@
+ Name[tg]=Хидматгоҳи FTP барои KDE
+ Name[th]=บริการ FTP อย่างเป็นทางการของ KDE
+ Name[tr]=KDE Resmi FTP Sunucusu
+-Name[uk]=Офіціальний FTP KDE
++Name[uk]=Офіційний FTP KDE
+ Name[uz]=Rasmiy KDE FTP
+ Name[uz@cyrillic]=Расмий KDE FTP
+ Name[vi]=FTP chính thức của KDE
+diff -Nur kdebase-4.3.4/apps/konqueror/sidebar/trees/init/remote/web/look_web.desktop kdebase-4.3.5/apps/konqueror/sidebar/trees/init/remote/web/look_web.desktop
+--- kdebase-4.3.4/apps/konqueror/sidebar/trees/init/remote/web/look_web.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/sidebar/trees/init/remote/web/look_web.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -72,7 +72,7 @@
+ Name[tg]=Веб сайти KDE Eye Candy
+ Name[th]=ตกแต่งลูกเล่นของ KDE
+ Name[tr]=KDE Görünüm ve Temaları
+-Name[uk]=KDE Eye Candy
++Name[uk]=Прикраси для KDE
+ Name[vi]=Kẹo ngọt Thị giác KDE
+ Name[wa]=Tot djoli KDE
+ Name[x-test]=xxKDE Eye Candyxx
+diff -Nur kdebase-4.3.4/apps/konqueror/sidebar/trees/init/root.desktop kdebase-4.3.5/apps/konqueror/sidebar/trees/init/root.desktop
+--- kdebase-4.3.4/apps/konqueror/sidebar/trees/init/root.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/sidebar/trees/init/root.desktop	2010-01-21 21:47:54.000000000 +0100
+@@ -96,7 +96,7 @@
+ Comment[bn]=এটি ফাইলসিস্টেমের মূল (root)
+ Comment[bn_IN]=এই ফোল্ডারটি ফাইল-সিস্টেমের root অর্থাৎ মূল
+ Comment[ca]=Aquesta és l'arrel del sistema de fitxers
+-Comment[ca@valencia]=Este és l'arrel del sistema de fitxers
++Comment[ca@valencia]=Esta és l'arrel del sistema de fitxers
+ Comment[cs]=Toto je kořenový adresář souborového systému
+ Comment[csb]=Je to kòrzéń systemë lopków (przédny katalog - root)
+ Comment[cy]=Dyma wraidd y cysawd ffeiliau
+@@ -161,7 +161,7 @@
+ Comment[tg]=Корневая папка файловой системы
+ Comment[th]=นี่เป็นรากของระบบแฟ้ม
+ Comment[tr]=Bu dosya sisteminin kök dizinidir
+-Comment[uk]=Це - корінь файлової системи
++Comment[uk]=Це коренева тека файлової системи
+ Comment[uz]=Fayl tizimining tubi
+ Comment[uz@cyrillic]=Файл тизимининг туби
+ Comment[vi]=Đây là gốc của hệ thống tập tin
+diff -Nur kdebase-4.3.4/apps/konqueror/sidebar/web_module/webmodule_add.desktop kdebase-4.3.5/apps/konqueror/sidebar/web_module/webmodule_add.desktop
+--- kdebase-4.3.4/apps/konqueror/sidebar/web_module/webmodule_add.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/sidebar/web_module/webmodule_add.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -69,15 +69,15 @@
+ Name[si]=වෙබ් පැති පුවරු මොඩියුලය
+ Name[sk]=Modul bočného Web panelu
+ Name[sl]=Modul spletne stranske vrstice
+-Name[sr]=Модул веб бочне траке
+-Name[sr@latin]=Modul veb bočne trake
++Name[sr]=Бочна трака Веба
++Name[sr@latin]=Bočna traka Weba
+ Name[sv]=Webbsidoradsmodul
+ Name[ta]=வலை பக்கப்பட்டி பகுதி
+ Name[te]=వెబ్ సైడ్‌బార్ మాడ్యూల్
+ Name[tg]=Модуль боковой панели Web
+ Name[th]=มอดูลแถบข้างสำหรับเว็บ
+ Name[tr]=Web Yan Çubuk Modülü
+-Name[uk]=Модуль бічної панелі Тенет
++Name[uk]=Модуль бічної панелі інтернету
+ Name[uz]=Veb yon paneli moduli
+ Name[uz@cyrillic]=Веб ён панели модули
+ Name[vi]=Mô đun Thanh bên Trình duyệt
+diff -Nur kdebase-4.3.4/apps/konqueror/sidebar/web_module/websidebar.desktop kdebase-4.3.5/apps/konqueror/sidebar/web_module/websidebar.desktop
+--- kdebase-4.3.4/apps/konqueror/sidebar/web_module/websidebar.desktop	2009-10-02 10:18:51.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/sidebar/web_module/websidebar.desktop	2010-01-21 21:47:53.000000000 +0100
+@@ -69,15 +69,15 @@
+ Name[si]=වෙබ් පැති පුවරු මොඩියුලය
+ Name[sk]=Modul bočného Web panelu
+ Name[sl]=Modul spletne stranske vrstice
+-Name[sr]=Модул веб бочне траке
+-Name[sr@latin]=Modul veb bočne trake
++Name[sr]=Бочна трака Веба
++Name[sr@latin]=Bočna traka Weba
+ Name[sv]=Webbsidoradsmodul
+ Name[ta]=வலை பக்கப்பட்டி பகுதி
+ Name[te]=వెబ్ సైడ్‌బార్ మాడ్యూల్
+ Name[tg]=Модуль боковой панели Web
+ Name[th]=มอดูลแถบข้างสำหรับเว็บ
+ Name[tr]=Web Yan Çubuk Modülü
+-Name[uk]=Модуль бічної панелі Тенет
++Name[uk]=Модуль бічної панелі інтернету
+ Name[uz]=Veb yon paneli moduli
+ Name[uz@cyrillic]=Веб ён панели модули
+ Name[vi]=Mô đun Thanh bên Trình duyệt
+diff -Nur kdebase-4.3.4/apps/konqueror/src/CMakeLists.txt kdebase-4.3.5/apps/konqueror/src/CMakeLists.txt
+--- kdebase-4.3.4/apps/konqueror/src/CMakeLists.txt	2009-04-15 12:25:22.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/src/CMakeLists.txt	2010-01-21 21:47:52.000000000 +0100
+@@ -39,6 +39,7 @@
+    konqrun.cpp
+    konqview.cpp
+    konqviewmanager.cpp
++   konqrmbeventfilter.cpp
+    konqmisc.cpp
+    konqdraggablelabel.cpp
+    konqframe.cpp
+diff -Nur kdebase-4.3.4/apps/konqueror/src/konqframecontainer.h kdebase-4.3.5/apps/konqueror/src/konqframecontainer.h
+--- kdebase-4.3.4/apps/konqueror/src/konqframecontainer.h	2008-08-14 12:44:49.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/src/konqframecontainer.h	2010-01-21 21:47:52.000000000 +0100
+@@ -81,7 +81,6 @@
+ class KonqFrameContainer : public QSplitter, public KonqFrameContainerBase   // TODO rename to KonqFrameContainerSplitter?
+ {
+   Q_OBJECT
+-  friend class KonqFrame; //for emitting ctrlTabPressed() only, aleXXX
+ public:
+   KonqFrameContainer( Qt::Orientation o,
+                       QWidget* parent,
+@@ -122,7 +121,6 @@
+     virtual void childEvent( QChildEvent * );
+ 
+ Q_SIGNALS:
+-  void ctrlTabPressed();
+   void setRubberbandCalled();
+ 
+ protected:
+diff -Nur kdebase-4.3.4/apps/konqueror/src/konqframe.cpp kdebase-4.3.5/apps/konqueror/src/konqframe.cpp
+--- kdebase-4.3.4/apps/konqueror/src/konqframe.cpp	2009-08-28 05:48:40.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/src/konqframe.cpp	2010-01-21 21:47:52.000000000 +0100
+@@ -167,21 +167,7 @@
+ 
+    m_pLayout->activate();
+ 
+-   widget->installEventFilter(this);
+-}
+-
+-bool KonqFrame::eventFilter(QObject* /*obj*/, QEvent *ev)
+-{
+-   if (ev->type()==QEvent::KeyPress)
+-   {
+-      QKeyEvent * keyEv = static_cast<QKeyEvent*>(ev);
+-      if ((keyEv->key()==Qt::Key_Tab) && (keyEv->modifiers()==Qt::ControlModifier))
+-      {
+-         emit ((KonqFrameContainer*)parent())->ctrlTabPressed();
+-         return true;
+-      }
+-   }
+-   return false;
++   installEventFilter(m_pView->mainWindow()); // for Ctrl+Tab
+ }
+ 
+ void KonqFrame::insertTopWidget( QWidget * widget )
+@@ -189,7 +175,7 @@
+     assert(m_pLayout);
+     assert(widget);
+     m_pLayout->insertWidget( 0, widget );
+-    widget->installEventFilter(this);
++    installEventFilter(m_pView->mainWindow()); // for Ctrl+Tab
+ }
+ 
+ void KonqFrame::setView( KonqView* child )
+diff -Nur kdebase-4.3.4/apps/konqueror/src/konqframe.h kdebase-4.3.5/apps/konqueror/src/konqframe.h
+--- kdebase-4.3.4/apps/konqueror/src/konqframe.h	2009-08-28 05:48:40.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/src/konqframe.h	2010-01-21 21:47:52.000000000 +0100
+@@ -131,12 +131,6 @@
+   KParts::ReadOnlyPart *attach( const KonqViewFactory &viewFactory );
+ 
+   /**
+-   * Filters the CTRL+Tab event from the views and emits ctrlTabPressed to
+-   make KonqMainWindow switch to the next view
+-   */
+-  virtual bool eventFilter(QObject*obj, QEvent *ev);
+-
+-  /**
+    * Inserts the widget and the statusbar into the layout
+    */
+   void attachWidget(QWidget* widget);
+diff -Nur kdebase-4.3.4/apps/konqueror/src/konqmainwindow.cpp kdebase-4.3.5/apps/konqueror/src/konqmainwindow.cpp
+--- kdebase-4.3.4/apps/konqueror/src/konqmainwindow.cpp	2009-10-30 13:28:17.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/src/konqmainwindow.cpp	2010-01-21 21:47:52.000000000 +0100
+@@ -22,6 +22,7 @@
+ */
+ 
+ #include "konqmainwindow.h"
++#include "konqrmbeventfilter.h"
+ #include "konqclosedwindowsmanager.h"
+ #include "konqsessionmanager.h"
+ #include "konqsessiondlg.h"
+@@ -195,6 +196,8 @@
+ 
+   s_lstViews->append( this );
+ 
++  KonqRmbEventFilter::self(); // create it
++
+   m_pChildFrame = 0;
+   m_pActiveChild = 0;
+   m_pWorkingTab = 0;
+@@ -1196,7 +1199,8 @@
+ 
+     // Pass the URL to createNewWindow so that it can select the right profile for it
+     // Note that it's always empty in case of window.open, though.
+-    mainWindow = KonqMisc::createNewWindow(url, args, browserArgs, false, QStringList(), false, false /*do not open URL*/);
++    mainWindow = KonqMisc::createNewWindow(url, args, browserArgs, false, QStringList(),
++        false, false /*do not open URL*/, false /*don't show*/);
+     mainWindow->resetAutoSaveSettings(); // Don't autosave
+ 
+     KonqOpenURLRequest req;
+@@ -2709,15 +2713,8 @@
+   KUrl::List urls;
+   if ( m_currentView ) {
+     urls.append( m_currentView->url() );
+-#if 0
+-    KonqDirPart* dirPart = ::qobject_cast<KonqDirPart *>(m_currentView->part());
+-    if ( dirPart ) {
+-      const KFileItemList itemList = dirPart->selectedFileItems();
+-      if (!itemList.isEmpty()) { // Return list of selected items only if we have a selection
+-        urls = itemList.urlList();
+-      }
+-    }
+-#endif
++    if (!m_currentView->selectedItems().isEmpty()) // Return list of selected items only if we have a selection
++        urls = m_currentView->selectedItems().urlList();
+   }
+   return urls;
+ }
+@@ -3193,7 +3190,7 @@
+       m_combo->clearHistory();
+ }
+ 
+-bool KonqMainWindow::eventFilter(QObject*obj,QEvent *ev)
++bool KonqMainWindow::eventFilter(QObject*obj, QEvent *ev)
+ {
+   if ( ( ev->type()==QEvent::FocusIn || ev->type()==QEvent::FocusOut ) &&
+        m_combo && m_combo->lineEdit() && m_combo == obj )
+@@ -3279,6 +3276,11 @@
+           m_paPaste->setEnabled( false );
+       }
+     }
++  } else if (ev->type()==QEvent::KeyPress) {
++      QKeyEvent * keyEv = static_cast<QKeyEvent*>(ev);
++      if ((keyEv->key() == Qt::Key_Tab) && (keyEv->modifiers() == Qt::ControlModifier)) {
++          slotCtrlTabPressed();
++      }
+   }
+   return KParts::MainWindow::eventFilter( obj, ev );
+ }
+@@ -4567,6 +4569,7 @@
+   // ## should use the new currentView->isHierarchicalView() instead?
+   // Would this be correct for the konqlistview tree view?
+   KUrl viewURL = currentView->isToggleView() ? KUrl() : currentView->url();
++  kDebug() << "viewURL=" << viewURL;
+ 
+   bool openedForViewURL = false;
+   //bool dirsSelected = false;
+@@ -4805,6 +4808,7 @@
+ 
+   KonqSettings::self()->readConfig();
+   m_pViewManager->applyConfiguration();
++  KonqRmbEventFilter::self()->reparseConfiguration();
+ 
+   m_bHTMLAllowed = KonqSettings::htmlAllowed();
+ 
+diff -Nur kdebase-4.3.4/apps/konqueror/src/konqmisc.cpp kdebase-4.3.5/apps/konqueror/src/konqmisc.cpp
+--- kdebase-4.3.4/apps/konqueror/src/konqmisc.cpp	2009-01-16 16:05:02.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/src/konqmisc.cpp	2010-01-21 21:47:52.000000000 +0100
+@@ -81,7 +81,8 @@
+ 
+ KonqMainWindow * KonqMisc::createNewWindow( const KUrl &url, const KParts::OpenUrlArguments &args,
+                                             const KParts::BrowserArguments& browserArgs,
+-                                            bool forbidUseHTML, const QStringList &filesToSelect, bool tempFile, bool openUrl )
++                                            bool forbidUseHTML, const QStringList &filesToSelect,
++                                            bool tempFile, bool openUrl, bool show )
+ {
+     //kDebug() << "url=" << url;
+     // For HTTP or html files, use the web browsing profile, otherwise use filemanager profile
+@@ -93,13 +94,14 @@
+   QString profile = KStandardDirs::locate( "data", QLatin1String("konqueror/profiles/") + profileName );
+   return createBrowserWindowFromProfile(profile, profileName,
+ 					url, args, browserArgs,
+-					forbidUseHTML, filesToSelect, tempFile, openUrl );
++					forbidUseHTML, filesToSelect, tempFile, openUrl, show );
+ }
+ 
+ KonqMainWindow * KonqMisc::createBrowserWindowFromProfile( const QString& _path, const QString &filename, const KUrl &url,
+                                                            const KParts::OpenUrlArguments &args,
+                                                            const KParts::BrowserArguments& browserArgs,
+-                                                           bool forbidUseHTML, const QStringList& filesToSelect, bool tempFile, bool openUrl )
++                                                           bool forbidUseHTML, const QStringList& filesToSelect,
++                                                           bool tempFile, bool openUrl, bool show )
+ {
+     QString path(_path);
+     kDebug(1202) << "path=" << path << ", filename=" << filename << ", url=" << url;
+@@ -153,7 +155,8 @@
+   if ( forbidUseHTML )
+       mainWindow->setShowHTML( false );
+   mainWindow->setInitialFrameName( browserArgs.frameName );
+-  mainWindow->show();
++  if ( show )
++      mainWindow->show();
+   return mainWindow;
+ }
+ 
+diff -Nur kdebase-4.3.4/apps/konqueror/src/konqmisc.h kdebase-4.3.5/apps/konqueror/src/konqmisc.h
+--- kdebase-4.3.4/apps/konqueror/src/konqmisc.h	2008-10-09 11:46:31.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/src/konqmisc.h	2010-01-21 21:47:52.000000000 +0100
+@@ -57,7 +57,8 @@
+                                       bool forbidUseHTML = false,
+                                       const QStringList &filesToSelect = QStringList(),
+                                       bool tempFile = false,
+-                                      bool openUrl = true);
++                                      bool openUrl = true,
++                                      bool show = true);
+ 
+     /**
+      * Create a new window from the profile defined by @p filename and @p path.
+@@ -73,7 +74,8 @@
+                                                      bool forbidUseHTML = false,
+                                                      const QStringList& filesToSelect = QStringList(),
+                                                      bool tempFile = false,
+-                                                     bool openUrl = true);
++                                                     bool openUrl = true,
++                                                     bool show = true);
+ 
+     /**
+      * Creates a new window from the history of a view, copies the history
+diff -Nur kdebase-4.3.4/apps/konqueror/src/konqrmbeventfilter.cpp kdebase-4.3.5/apps/konqueror/src/konqrmbeventfilter.cpp
+--- kdebase-4.3.4/apps/konqueror/src/konqrmbeventfilter.cpp	1970-01-01 01:00:00.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/src/konqrmbeventfilter.cpp	2010-01-21 21:47:52.000000000 +0100
+@@ -0,0 +1,116 @@
++/*
++    Copyright (c) 2009 David Faure <faure@kde.org>
++
++    This library is free software; you can redistribute it and/or modify
++    it under the terms of the GNU Lesser General Public License as published by
++    the Free Software Foundation; either version 2 of the License or ( at
++    your option ) version 3 or, at the discretion of KDE e.V. ( which shall
++    act as a proxy as in section 14 of the GPLv3 ), any later version.
++
++    This library is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++    Library General Public License for more details.
++
++    You should have received a copy of the GNU Lesser General Public License
++    along with this library; see the file COPYING.LIB.  If not, write to
++    the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++    Boston, MA 02110-1301, USA.
++*/
++
++#include "konqrmbeventfilter.h"
++#include "konqframe.h"
++#include "konqview.h"
++#include "konqmainwindow.h"
++#include "konqsettingsxt.h"
++#include <kglobal.h>
++#include <QApplication>
++
++class KonqRmbEventFilterSingleton
++{
++public:
++    KonqRmbEventFilter self;
++};
++
++K_GLOBAL_STATIC(KonqRmbEventFilterSingleton, globalRmbEventFilter)
++
++KonqRmbEventFilter* KonqRmbEventFilter::self()
++{
++    return &globalRmbEventFilter->self;
++}
++
++KonqRmbEventFilter::KonqRmbEventFilter()
++    : QObject(0)
++{
++    m_bBackRightClick = KonqSettings::backRightClick();
++    if (m_bBackRightClick) {
++        qApp->installEventFilter(this);
++    }
++}
++
++static KonqFrame* parentFrame(QWidget* w)
++{
++    KonqFrame* frame = 0;
++    while (w && !frame) {
++        w = w->parentWidget(); // yes this fails if the initial widget itself is a KonqFrame, but this can't happen
++        frame = qobject_cast<KonqFrame *>(w);
++    }
++    return frame;
++}
++
++bool KonqRmbEventFilter::eventFilter(QObject *obj, QEvent *e)
++{
++    const int type = e->type();
++    switch(type) {
++    case QEvent::MouseButtonPress:
++        if (static_cast<QMouseEvent *>(e)->button() == Qt::RightButton) {
++            return true;
++        }
++        break;
++    case QEvent::MouseButtonRelease:
++        if (static_cast<QMouseEvent *>(e)->button() == Qt::RightButton) {
++            QWidget* w = static_cast<QWidget *>(obj);
++            if (KonqFrame* frame = parentFrame(w)) {
++                frame->childView()->mainWindow()->slotBack();
++                return true;
++            }
++        }
++        break;
++    case QEvent::MouseMove:
++    {
++        QMouseEvent* ev = static_cast<QMouseEvent *>(e);
++        if (ev->buttons() & Qt::RightButton) {
++            qApp->removeEventFilter( this );
++            QMouseEvent me( QEvent::MouseButtonPress, ev->pos(), Qt::RightButton, Qt::RightButton, Qt::NoModifier );
++            QApplication::sendEvent( obj, &me );
++            QContextMenuEvent ce( QContextMenuEvent::Mouse, ev->pos(), ev->globalPos() );
++            QApplication::sendEvent( obj, &ce );
++            qApp->installEventFilter( this );
++        }
++        break;
++    }
++    case QEvent::ContextMenu:
++    {
++        QContextMenuEvent *ev = static_cast<QContextMenuEvent *>(e);
++        if (ev->reason() == QContextMenuEvent::Mouse) {
++            return true;
++        }
++        break;
++    }
++    default:
++        break;
++    }
++
++    return false;
++}
++
++void KonqRmbEventFilter::reparseConfiguration()
++{
++    const bool oldBackRightClick = m_bBackRightClick;
++    m_bBackRightClick = KonqSettings::backRightClick();
++    if (!oldBackRightClick && m_bBackRightClick) {
++        qApp->installEventFilter(this);
++    } else if (oldBackRightClick && !m_bBackRightClick) {
++        qApp->removeEventFilter(this);
++    }
++}
+diff -Nur kdebase-4.3.4/apps/konqueror/src/konqrmbeventfilter.h kdebase-4.3.5/apps/konqueror/src/konqrmbeventfilter.h
+--- kdebase-4.3.4/apps/konqueror/src/konqrmbeventfilter.h	1970-01-01 01:00:00.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/src/konqrmbeventfilter.h	2010-01-21 21:47:52.000000000 +0100
+@@ -0,0 +1,46 @@
++/*
++    Copyright (c) 2009 David Faure <faure@kde.org>
++
++    This library is free software; you can redistribute it and/or modify
++    it under the terms of the GNU Lesser General Public License as published by
++    the Free Software Foundation; either version 2 of the License or ( at
++    your option ) version 3 or, at the discretion of KDE e.V. ( which shall
++    act as a proxy as in section 14 of the GPLv3 ), any later version.
++
++    This library is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++    Library General Public License for more details.
++
++    You should have received a copy of the GNU Lesser General Public License
++    along with this library; see the file COPYING.LIB.  If not, write to
++    the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++    Boston, MA 02110-1301, USA.
++*/
++
++#ifndef KONQRMBEVENTFILTER_H
++#define KONQRMBEVENTFILTER_H
++
++#include <QObject>
++
++class KonqRmbEventFilter : public QObject
++{
++    Q_OBJECT
++
++public:
++    static KonqRmbEventFilter* self();
++
++    void reparseConfiguration();
++
++protected:
++    virtual bool eventFilter(QObject *o, QEvent *e);
++
++private:
++    explicit KonqRmbEventFilter();
++    friend class KonqRmbEventFilterSingleton;
++
++    bool m_bBackRightClick;
++};
++
++#endif /* KONQRMBEVENTFILTER_H */
++
+diff -Nur kdebase-4.3.4/apps/konqueror/src/konqtabs.h kdebase-4.3.5/apps/konqueror/src/konqtabs.h
+--- kdebase-4.3.4/apps/konqueror/src/konqtabs.h	2009-02-26 10:11:47.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/src/konqtabs.h	2010-01-21 21:47:52.000000000 +0100
+@@ -43,7 +43,6 @@
+ class KonqFrameTabs : public KTabWidget, public KonqFrameContainerBase
+ {
+   Q_OBJECT
+-  friend class KonqFrame; //for emitting ctrlTabPressed() only, aleXXX
+ 
+ public:
+   KonqFrameTabs(QWidget* parent, KonqFrameContainerBase* parentContainer,
+@@ -94,7 +93,6 @@
+   void setAlwaysTabbedMode( bool );
+ 
+ Q_SIGNALS:
+-  void ctrlTabPressed();
+   void removeTabPopup();
+     void openUrl(KonqView* view, const KUrl& url);
+ 
+diff -Nur kdebase-4.3.4/apps/konqueror/src/konqueror.kcfg kdebase-4.3.5/apps/konqueror/src/konqueror.kcfg
+--- kdebase-4.3.4/apps/konqueror/src/konqueror.kcfg	2009-05-06 12:13:36.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/src/konqueror.kcfg	2010-01-21 21:47:52.000000000 +0100
+@@ -285,7 +285,7 @@
+       <whatsthis></whatsthis>
+       <!-- checked -->
+     </entry>
+-    <entry key="BackRightClick" type="Bool"> <!--KHTML-->
++    <entry key="BackRightClick" type="Bool"> <!--konqrmbeventfilter.cpp but also in KHTML !?-->
+       <default>false</default> 
+       <label></label>
+       <whatsthis></whatsthis>
+diff -Nur kdebase-4.3.4/apps/konqueror/src/konqview.cpp kdebase-4.3.5/apps/konqueror/src/konqview.cpp
+--- kdebase-4.3.4/apps/konqueror/src/konqview.cpp	2009-03-18 10:57:53.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/src/konqview.cpp	2010-01-21 21:47:52.000000000 +0100
+@@ -98,7 +98,6 @@
+   m_bGotIconURL = false;
+   m_bPopupMenuEnabled = true;
+   m_browserIface = new KonqBrowserInterface( this );
+-  m_bBackRightClick = KonqSettings::backRightClick();
+   m_bFollowActive = false;
+   m_bBuiltinView = false;
+   m_bURLDropHandling = false;
+@@ -494,22 +493,6 @@
+       m_pPart->widget()->setAcceptDrops(true);
+ 
+   m_pPart->widget()->installEventFilter( this );
+-
+-  if (m_bBackRightClick) {
+-      QAbstractScrollArea* scrollArea = ::qobject_cast<QAbstractScrollArea *>( m_pPart->widget() );
+-      if ( scrollArea ) {
+-          scrollArea->viewport()->installEventFilter( this );
+-      }
+-  }
+-
+-#if 0
+-  // KonqDirPart signal
+-  if ( ::qobject_cast<KonqDirPart *>(m_pPart) )
+-  {
+-      connect( m_pPart, SIGNAL( findOpen( KonqDirPart * ) ),
+-               m_pMainWindow, SLOT( slotFindOpen( KonqDirPart * ) ) );
+-  }
+-#endif
+ }
+ 
+ void KonqView::slotEnableAction( const char * name, bool enabled )
+@@ -642,6 +625,7 @@
+ 
+ void KonqView::slotSelectionInfo( const KFileItemList &items )
+ {
++  m_selectedItems = items;
+   KonqFileSelectionEvent ev( items, m_pPart );
+   QApplication::sendEvent( m_pMainWindow, &ev );
+ }
+@@ -1150,36 +1134,11 @@
+     disconnect( ext, SIGNAL(popupMenu(QPoint,KUrl,mode_t,KParts::OpenUrlArguments,KParts::BrowserArguments,KParts::BrowserExtension::PopupFlags,KParts::BrowserExtension::ActionGroupMap)),
+              m_pMainWindow, SLOT(slotPopupMenu(QPoint,KUrl,mode_t,KParts::OpenUrlArguments,KParts::BrowserArguments,KParts::BrowserExtension::PopupFlags,KParts::BrowserExtension::ActionGroupMap)) );
+   }
+-  enableBackRightClick( m_bBackRightClick );
+-}
+-
+-// caller should ensure that this is called only when b changed, or for new parts
+-void KonqView::enableBackRightClick( bool b )
+-{
+-    m_bBackRightClick = b;
+-    if ( b )
+-        connect( this, SIGNAL( backRightClick() ),
+-                 m_pMainWindow, SLOT( slotBack() ) );
+-    else
+-        disconnect( this, SIGNAL( backRightClick() ),
+-                    m_pMainWindow, SLOT( slotBack() ) );
+ }
+ 
+ void KonqView::reparseConfiguration()
+ {
+     callExtensionMethod( "reparseConfiguration" );
+-    const bool b = KonqSettings::backRightClick();
+-    if ( m_bBackRightClick != b ) {
+-        QAbstractScrollArea* scrollArea = ::qobject_cast<QAbstractScrollArea *>( m_pPart->widget() );
+-        if (scrollArea) {
+-            if ( m_bBackRightClick ) {
+-                scrollArea->viewport()->installEventFilter( this );
+-            } else {
+-                scrollArea->viewport()->removeEventFilter( this );
+-            }
+-        }
+-        enableBackRightClick( b );
+-    }
+ }
+ 
+ void KonqView::disableScrolling()
+@@ -1243,49 +1202,6 @@
+             emit ext->openUrlRequest( lstDragURLs.first() ); // this will call m_pMainWindow::slotOpenURLRequest delayed
+     }
+ 
+-    if ( m_bBackRightClick )
+-    {
+-        if ( e->type() == QEvent::ContextMenu )
+-        {
+-            QContextMenuEvent *ev = static_cast<QContextMenuEvent *>( e );
+-            if ( ev->reason() == QContextMenuEvent::Mouse )
+-            {
+-                return true;
+-            }
+-        }
+-        else if ( e->type() == QEvent::MouseButtonPress )
+-        {
+-            QMouseEvent *ev = static_cast<QMouseEvent *>( e );
+-            if ( ev->button() == Qt::RightButton )
+-            {
+-                return true;
+-            }
+-        }
+-        else if ( e->type() == QEvent::MouseButtonRelease )
+-        {
+-            QMouseEvent *ev = static_cast<QMouseEvent *>( e );
+-            if ( ev->button() == Qt::RightButton )
+-            {
+-                emit backRightClick();
+-                return true;
+-            }
+-        }
+-        else if ( e->type() == QEvent::MouseMove )
+-        {
+-            QMouseEvent *ev = static_cast<QMouseEvent *>( e );
+-            if ( ev->button() == Qt::RightButton )
+-            {
+-                obj->removeEventFilter( this );
+-                QMouseEvent me( QEvent::MouseButtonPress, ev->pos(), Qt::RightButton, Qt::RightButton, Qt::NoModifier );
+-                QApplication::sendEvent( obj, &me );
+-                QContextMenuEvent ce( QContextMenuEvent::Mouse, ev->pos(), ev->globalPos() );
+-                QApplication::sendEvent( obj, &ce );
+-                obj->installEventFilter( this );
+-                return true;
+-            }
+-        }
+-    }
+-
+     if ( e->type() == QEvent::FocusIn )
+     {
+         setActiveComponent();
+diff -Nur kdebase-4.3.4/apps/konqueror/src/konqview.h kdebase-4.3.5/apps/konqueror/src/konqview.h
+--- kdebase-4.3.4/apps/konqueror/src/konqview.h	2008-10-23 01:03:29.000000000 +0200
++++ kdebase-4.3.5/apps/konqueror/src/konqview.h	2010-01-21 21:47:52.000000000 +0100
+@@ -341,6 +341,8 @@
+   void enablePopupMenu( bool b );
+   bool isPopupMenuEnabled() const { return m_bPopupMenuEnabled; }
+ 
++  KFileItemList selectedItems() const { return m_selectedItems; }
++
+   void reparseConfiguration();
+ 
+   void disableScrolling();
+@@ -384,11 +386,6 @@
+    */
+   void viewCompleted( KonqView * view );
+ 
+-  /**
+-   * Emitted only if the option backRightClick is activated
+-   */
+-  void backRightClick();
+-
+ public Q_SLOTS:
+   /**
+    * Store location-bar URL in the child view
+@@ -433,7 +430,6 @@
+   void slotRequestFocus(KParts::ReadOnlyPart*);
+ 
+ private:
+-  void enableBackRightClick( bool b );
+   /**
+    * Replace the current view with a new view, created by @p viewFactory.
+    */
+@@ -477,6 +473,7 @@
+   QString m_sLocationBarURL;
+   QString m_sTypedURL;
+   KonqMainWindow::PageSecurity m_pageSecurity;
++  KFileItemList m_selectedItems;
+ 
+   /**
+    * The full history (back + current + forward)
+@@ -519,7 +516,6 @@
+   uint m_bPendingRedirection:1;
+   uint m_bBuiltinView:1;
+   uint m_bURLDropHandling:1;
+-  uint m_bBackRightClick:1;
+   uint m_bHierarchicalView:1;
+   uint m_bDisableScrolling:1;
+   KService::List m_partServiceOffers;
+diff -Nur kdebase-4.3.4/apps/konqueror/src/konqviewmanager.cpp kdebase-4.3.5/apps/konqueror/src/konqviewmanager.cpp
+--- kdebase-4.3.4/apps/konqueror/src/konqviewmanager.cpp	2009-11-27 14:01:42.000000000 +0100
++++ kdebase-4.3.5/apps/konqueror/src/konqviewmanager.cpp	2010-01-21 21:47:52.000000000 +0100
+@@ -128,7 +128,6 @@
+   }
+ 
+   KonqFrameContainer* newContainer = parentContainer->splitChildFrame(splitFrame, orientation);
+-  connect(newContainer, SIGNAL(ctrlTabPressed()), m_pMainWindow, SLOT(slotCtrlTabPressed()));
+ 
+   //kDebug(1202) << "Create new child";
+   KonqView *newView = setupView( newContainer, newViewFactory, service, partServiceOffers, appServiceOffers, serviceType, false );
+@@ -188,7 +187,6 @@
+     KonqFrameBase* mainFrame = m_pMainWindow->childFrame();
+ 
+     KonqFrameContainer* newContainer = m_pMainWindow->splitChildFrame(mainFrame, orientation);
+-    connect(newContainer, SIGNAL(ctrlTabPressed()), m_pMainWindow, SLOT(slotCtrlTabPressed()));
+ 
+     KonqView* childView = setupView( newContainer, newViewFactory, service, partServiceOffers, appServiceOffers, serviceType, true );
+ 
+@@ -362,6 +360,10 @@
+     mainWindow->viewManager()->loadRootItem( configGroup, mainWindow, KUrl(), true, KUrl() );
+     mainWindow->applyMainWindowSettings( configGroup, true );
+     mainWindow->activateChild();
++
++#ifdef DEBUG_VIEWMGR
++    mainWindow->viewManager()->printFullHierarchy();
++#endif
+     return mainWindow;
+ }
+ 
+@@ -373,6 +375,9 @@
+         return KonqViewManager::openSavedWindow(configGroup);
+     } else {
+         loadRootItem( configGroup, tabContainer(), KUrl(), true, KUrl() );
++#ifndef NDEBUG
++        printFullHierarchy();
++#endif
+         return m_pMainWindow;
+     }
+ }
+@@ -810,7 +815,9 @@
+ 
+   parentContainer->insertChildFrame( newViewFrame, index );
+ 
+-  if (parentContainer->frameType() != KonqFrameBase::Tabs) newViewFrame->show();
++  if (parentContainer->frameType() != KonqFrameBase::Tabs) {
++      newViewFrame->show();
++  }
+ 
+   // Don't register passive views to the part manager
+   if ( !v->isPassiveMode() ) // note that KonqView's constructor could set this to true even if passiveMode is false
+@@ -1134,7 +1141,9 @@
+         prefix = name + QLatin1Char( '_' );
+     }
+ 
+-    //kDebug(1202) << "begin name=" << name << "openUrl=" << openUrl;
++#ifdef DEBUG_VIEWMGR
++    kDebug() << "begin name=" << name << "openUrl=" << openUrl;
++#endif
+ 
+     if (name.startsWith("View") || name == "empty") {
+         // load view config
+@@ -1191,8 +1200,6 @@
+         QApplication::sendEvent( childView->part(), &ev );
+ #endif
+ 
+-        childView->frame()->show();
+-
+         if (parent == m_tabContainer && m_tabContainer->count() == 1) {
+             // First tab, make it the active one
+             parent->setActiveChild(childView->frame());
+@@ -1261,7 +1268,6 @@
+     else
+     {
+       KonqFrameContainer *newContainer = new KonqFrameContainer( o, parent->asQWidget(), parent );
+-      connect(newContainer,SIGNAL(ctrlTabPressed()),m_pMainWindow,SLOT(slotCtrlTabPressed()));
+ 
+       int tabindex = pos;
+       if(openAfterCurrentPage && parent->frameType() == KonqFrameBase::Tabs) // Need to honor it, if possible
+@@ -1495,7 +1501,7 @@
+             className = frame->part()->widget()->metaObject()->className();
+         kDebug(1202) << m_spaces << frame
+                      << "parent=" << frame->parentContainer()
+-                     << (frame->isVisible() ? "visible" : "invisible")
++                     << (frame->isHidden() ? "hidden" : "shown")
+                      << "containing view" << frame->childView()
+                      << "and part" << frame->part()
+                      << "whose widget is a" << className;
+@@ -1503,7 +1509,7 @@
+     }
+     virtual bool visit(KonqFrameContainer* container) {
+         kDebug(1202) << m_spaces << container
+-                     << (container->isVisible() ? "visible" : "invisible")
++                     << (container->isHidden() ? "hidden" : "shown")
+                      << (container->orientation() == Qt::Horizontal ? "horizontal" : "vertical")
+                      << "sizes=" << container->sizes()
+                      << "parent=" << container->parentContainer()
+@@ -1565,9 +1571,10 @@
+ 
+ void KonqViewManager::createTabContainer(QWidget* parent, KonqFrameContainerBase* parentContainer)
+ {
+-    //kDebug(1202) << "createTabContainer" << parent << parentContainer;
++#ifdef DEBUG_VIEWMGR
++    kDebug() << "createTabContainer" << parent << parentContainer;
++#endif
+     m_tabContainer = new KonqFrameTabs( parent, parentContainer, this );
+-    connect( m_tabContainer, SIGNAL(ctrlTabPressed()), m_pMainWindow, SLOT(slotCtrlTabPressed()) );
+     // Delay the opening of the URL for #106641
+     bool ok = connect( m_tabContainer, SIGNAL(openUrl(KonqView*, KUrl)), m_pMainWindow, SLOT(openUrl(KonqView*, KUrl)), Qt::QueuedConnection);
+     Q_ASSERT(ok);
+diff -Nur kdebase-4.3.4/apps/konsole/desktop/konsole.notifyrc kdebase-4.3.5/apps/konsole/desktop/konsole.notifyrc
+--- kdebase-4.3.4/apps/konsole/desktop/konsole.notifyrc	2009-10-02 10:18:54.000000000 +0200
++++ kdebase-4.3.5/apps/konsole/desktop/konsole.notifyrc	2010-01-21 21:47:56.000000000 +0100
+@@ -167,7 +167,7 @@
+ Comment[bn]=একটি দৃশ্যমান সেশন-এ ঘণ্টা বেজেছে
+ Comment[bn_IN]=দৃশ্যমান সেশানের মধ্যে যে ঘন্টাধ্বনি বাজানো হয়
+ Comment[ca]=Timbre emès en una sessió visible
+-Comment[ca@valencia]=Timbre emès en una sessió visible
++Comment[ca@valencia]=Timbre emés en una sessió visible
+ Comment[cs]=Zvonek ve viditelné relaci
+ Comment[csb]=Zwónk jaczi zwãczi w widzawny sesëji
+ Comment[cy]=Gollyngwyd cloch mewn sesiwn gweledig
+@@ -320,7 +320,7 @@
+ Comment[bn]=একটি অদৃশ্য সেশন-এ ঘণ্টা বেজেছে
+ Comment[bn_IN]=অদৃশ্য সেশানের ঘন্টাধ্বনি
+ Comment[ca]=Timbre emès en una sessió no visible
+-Comment[ca@valencia]=Timbre emès en una sessió no visible
++Comment[ca@valencia]=Timbre emés en una sessió no visible
+ Comment[cs]=Zvonek ve skryté relaci
+ Comment[csb]=Zwónk jaczi zwãczi w niewidzawny sesëji
+ Comment[cy]=Gollyngwyd cloch mewn sesiwn anweledig
+@@ -843,7 +843,7 @@
+ Comment[tg]=Сеанс бо ҳолати сифр хуруҷ карда шуд
+ Comment[th]=เกิดการออกจากวาระงานด้วยสถานะที่ไม่ใช่ศูนย์
+ Comment[tr]=Bir oturum hata vererek çıktı
+-Comment[uk]=Сеанс завершився з не нульовим станом
++Comment[uk]=Сеанс завершився з ненульовим станом
+ Comment[uz]=Seans nolga teng boʻlmagan holat bilan tugadi
+ Comment[uz@cyrillic]=Сеанс нолга тенг бўлмаган ҳолат билан тугади
+ Comment[wa]=Ene session a moussî foû avou on statut nén zero
+diff -Nur kdebase-4.3.4/apps/konsole/src/ViewContainer.cpp kdebase-4.3.5/apps/konsole/src/ViewContainer.cpp
+--- kdebase-4.3.4/apps/konsole/src/ViewContainer.cpp	2009-10-30 13:28:19.000000000 +0100
++++ kdebase-4.3.5/apps/konsole/src/ViewContainer.cpp	2010-01-21 21:47:56.000000000 +0100
+@@ -429,7 +429,7 @@
+     _tabBar = new ViewContainerTabBar(_containerWidget,this);
+     _tabBar->setDrawBase(true);
+     _tabBar->setDocumentMode(true);
+-    _tabBar->setFocusPolicy(Qt::ClickFocus);
++    _tabBar->setFocusPolicy(Qt::NoFocus);
+ 
+     _newTabButton = new QToolButton(_containerWidget);
+     _newTabButton->setIcon(KIcon("tab-new"));
+diff -Nur kdebase-4.3.4/apps/lib/konq/favicons/favicons.desktop kdebase-4.3.5/apps/lib/konq/favicons/favicons.desktop
+--- kdebase-4.3.4/apps/lib/konq/favicons/favicons.desktop	2009-11-27 14:01:44.000000000 +0100
++++ kdebase-4.3.5/apps/lib/konq/favicons/favicons.desktop	2010-01-21 21:47:55.000000000 +0100
+@@ -159,7 +159,7 @@
+ Comment[tg]=Показ настраиваемых значков в KDE
+ Comment[th]=สนับสนุนไอคอนทางลัด
+ Comment[tr]=Kısayol simge desteği
+-Comment[uk]=Підтримка скорочень піктограм
++Comment[uk]=Підтримка піктограм скорочень
+ Comment[vi]=Hỗ trợ biểu tượng giúp truy cập nhanh
+ Comment[wa]=Sopoirt imådjetes rascourtis
+ Comment[x-test]=xxShortcut icon supportxx
+diff -Nur kdebase-4.3.4/apps/lib/konq/konqdndpopupmenuplugin.desktop kdebase-4.3.5/apps/lib/konq/konqdndpopupmenuplugin.desktop
+--- kdebase-4.3.4/apps/lib/konq/konqdndpopupmenuplugin.desktop	2009-11-27 14:01:44.000000000 +0100
++++ kdebase-4.3.5/apps/lib/konq/konqdndpopupmenuplugin.desktop	2010-01-21 21:47:55.000000000 +0100
+@@ -6,6 +6,7 @@
+ Comment[bg]=Приставка за влачене и пускане към контекстното меню
+ Comment[bn_IN]=Konqueror পপ-আপ মেনুর ড্র্যাগ-ও-ড্রপ প্লাগ-ইন
+ Comment[ca]=Connector d'arrossegar i deixar anar per al menú emergent del Konqueror.
++Comment[ca@valencia]=Connector d'arrossegar i deixar anar per al menú emergent del Konqueror.
+ Comment[cs]=Drag'n'drop modul pro kontextovou nabídku Konqueroru.
+ Comment[csb]=Wtëkôcz przecygni ë wlepi (drag-and-drop) dlô wëskakùjącegò menu Konquerora.
+ Comment[da]=Træk og slip-plugin til Konquerors popop-menu.
+@@ -47,7 +48,7 @@
+ Comment[sv]=Insticksprogram med drag och släpp för Konquerors popupmeny.
+ Comment[tg]=Модул барои менюи пайдошавии Konqueror
+ Comment[tr]=Konqueror Açılabilir Menüsü için sürükle bırak eklentisi.
+-Comment[uk]=Втулок перетягування зі скиданням для контекстного меню Konqueror.
++Comment[uk]=Додаток перетягування зі скиданням для контекстного меню Konqueror.
+ Comment[wa]=Tchôke-divins bodjî eyet saetchî po l' aspitant menu di Konqueror
+ Comment[x-test]=xxDrag-and-drop plugin for the Konqueror Popup Menu.xx
+ Comment[zh_CN]=Konqueror 弹出菜单拖放插件。
+diff -Nur kdebase-4.3.4/apps/lib/konq/konqpopupmenuplugin.desktop kdebase-4.3.5/apps/lib/konq/konqpopupmenuplugin.desktop
+--- kdebase-4.3.4/apps/lib/konq/konqpopupmenuplugin.desktop	2009-10-02 10:18:53.000000000 +0200
++++ kdebase-4.3.5/apps/lib/konq/konqpopupmenuplugin.desktop	2010-01-21 21:47:55.000000000 +0100
+@@ -76,7 +76,7 @@
+ Comment[tg]=Модул барои менюи пайдошавии Konqueror
+ Comment[th]=โปรแกรมเสริมการทำงานสำหรับเมนูป๊อปอัปของ Konqueror
+ Comment[tr]=Konqueror Açılabilir Menüsü İçin Eklenti
+-Comment[uk]=Втулок вигулькних меню Konqueror
++Comment[uk]=Додаток контекстного меню Konqueror
+ Comment[vi]=Trình bổ sung cho Trình đơn Bật lên của Konqueror
+ Comment[wa]=Tchôke-divins po l' aspitant menu di Konqueror
+ Comment[xh]=Iplagi efakiweyo ye Konqueror ye Popup Menu
+diff -Nur kdebase-4.3.4/apps/lib/konq/Templates/Directory.desktop kdebase-4.3.5/apps/lib/konq/Templates/Directory.desktop
+--- kdebase-4.3.4/apps/lib/konq/Templates/Directory.desktop	2009-10-02 10:18:53.000000000 +0200
++++ kdebase-4.3.5/apps/lib/konq/Templates/Directory.desktop	2010-01-21 21:47:55.000000000 +0100
+@@ -93,7 +93,7 @@
+ Comment[bn_IN]=ফোল্ডারের নাম লিখুন:
+ Comment[br]=Roit un anv ar renkell :
+ Comment[ca]=Introduïu el nom de la carpeta:
+-Comment[ca@valencia]=Entra el nom de la carpeta:
++Comment[ca@valencia]=Introduïu el nom de la carpeta:
+ Comment[cs]=Zadejte název složky:
+ Comment[csb]=Wpiszë miono kataloga:
+ Comment[cy]=Mewnosodwch enw'r plygell:
+diff -Nur kdebase-4.3.4/apps/lib/konq/Templates/HTMLFile.desktop kdebase-4.3.5/apps/lib/konq/Templates/HTMLFile.desktop
+--- kdebase-4.3.4/apps/lib/konq/Templates/HTMLFile.desktop	2009-10-02 10:18:53.000000000 +0200
++++ kdebase-4.3.5/apps/lib/konq/Templates/HTMLFile.desktop	2010-01-21 21:47:55.000000000 +0100
+@@ -93,7 +93,7 @@
+ Comment[bn_IN]=HTML ফাইলের নাম লিখুন:
+ Comment[br]=Roit un anv ar restr :
+ Comment[ca]=Introduïu el nom del fitxer HTML:
+-Comment[ca@valencia]=Entra el nom del fitxer HTML:
++Comment[ca@valencia]=Introduïu el nom del fitxer HTML:
+ Comment[cs]=Zadejte název HTML souboru...
+ Comment[csb]=Wpiszë miono lopka HTML:
+ Comment[da]=Indtast HTML-filnavn:
+diff -Nur kdebase-4.3.4/apps/lib/konq/Templates/linkProgram.desktop kdebase-4.3.5/apps/lib/konq/Templates/linkProgram.desktop
+--- kdebase-4.3.4/apps/lib/konq/Templates/linkProgram.desktop	2009-10-02 10:18:53.000000000 +0200
++++ kdebase-4.3.5/apps/lib/konq/Templates/linkProgram.desktop	2010-01-21 21:47:55.000000000 +0100
+@@ -29,7 +29,7 @@
+ Name[he]=קישור ליישום...
+ Name[hi]=अनुप्रयोग को लिंक...
+ Name[hne]=अनुपरयोग बर संकली...
+-Name[hr]=Veza premaaplikaciji …
++Name[hr]=Veza prema aplikaciji …
+ Name[hsb]=Wotkaz na aplikaciju ...
+ Name[hu]=Alkalmazásra mutató link...
+ Name[is]=Tengi við forrit...
+diff -Nur kdebase-4.3.4/apps/lib/konq/Templates/linkURL.desktop kdebase-4.3.5/apps/lib/konq/Templates/linkURL.desktop
+--- kdebase-4.3.4/apps/lib/konq/Templates/linkURL.desktop	2009-10-02 10:18:53.000000000 +0200
++++ kdebase-4.3.5/apps/lib/konq/Templates/linkURL.desktop	2010-01-21 21:47:55.000000000 +0100
+@@ -92,7 +92,7 @@
+ Comment[bn_IN]=অবস্থান নির্দেশকারী লিঙ্ক উল্লেখ করুন (URL):
+ Comment[br]=Roit al liamm ouzh ul lec'hiadur (URL) :
+ Comment[ca]=Introduïu un enllaç a la localització (URL):
+-Comment[ca@valencia]=Entreu un enllaç a la localització (URL):
++Comment[ca@valencia]=Introduïu un enllaç a la localització (URL):
+ Comment[cs]=Zadejte odkaz na umístění (URL):
+ Comment[csb]=Wpiszë lënk do adresë (URL):
+ Comment[cy]=Mewnosodwch cyswllt i leoliad (URL):
+diff -Nur kdebase-4.3.4/apps/lib/konq/Templates/TextFile.desktop kdebase-4.3.5/apps/lib/konq/Templates/TextFile.desktop
+--- kdebase-4.3.4/apps/lib/konq/Templates/TextFile.desktop	2009-10-02 10:18:53.000000000 +0200
++++ kdebase-4.3.5/apps/lib/konq/Templates/TextFile.desktop	2010-01-21 21:47:55.000000000 +0100
+@@ -93,7 +93,7 @@
+ Comment[bn_IN]=টেক্সট ফাইলের নাম লিখুন:
+ Comment[br]=Roit un anv ar restr skrid :
+ Comment[ca]=Introduïu el nom del fitxer de text:
+-Comment[ca@valencia]=Entra el nom del fitxer de text:
++Comment[ca@valencia]=Introduïu el nom del fitxer de text:
+ Comment[cs]=Zadejte název textového souboru...
+ Comment[csb]=Wpiszë miono tekstowégò lopka:
+ Comment[da]=Indtast tekstfilnavn:
+diff -Nur kdebase-4.3.4/apps/nsplugins/khtml_plugins.desktop kdebase-4.3.5/apps/nsplugins/khtml_plugins.desktop
+--- kdebase-4.3.4/apps/nsplugins/khtml_plugins.desktop	2009-10-02 10:18:44.000000000 +0200
++++ kdebase-4.3.5/apps/nsplugins/khtml_plugins.desktop	2010-01-21 21:47:51.000000000 +0100
+@@ -88,7 +88,7 @@
+ Name[tg]=Модулҳо
+ Name[th]=โปรแกรมเสริม
+ Name[tr]=Eklentiler
+-Name[uk]=Втулки
++Name[uk]=Додатки
+ Name[uz]=Plaginlar
+ Name[uz@cyrillic]=Плагинлар
+ Name[vi]=Bổ sung
+@@ -173,7 +173,7 @@
+ Comment[tg]=Настройка модулей браузера
+ Comment[th]=ปรับแต่งโปรแกรมเสริมของเบราว์เซอร์
+ Comment[tr]=Tarayıcı eklentilerini yapılandır
+-Comment[uk]=Налаштування втулків навігатора
++Comment[uk]=Налаштування додатків навігатора
+ Comment[uz]=Brauzerning plaginlarini moslash
+ Comment[uz@cyrillic]=Браузернинг плагинларини мослаш
+ Comment[vi]=Cấu hình trình bổ sung cho trình duyệt
+diff -Nur kdebase-4.3.4/apps/plasma/applets/folderview/plasma-applet-folderview.desktop kdebase-4.3.5/apps/plasma/applets/folderview/plasma-applet-folderview.desktop
+--- kdebase-4.3.4/apps/plasma/applets/folderview/plasma-applet-folderview.desktop	2009-11-27 14:01:44.000000000 +0100
++++ kdebase-4.3.5/apps/plasma/applets/folderview/plasma-applet-folderview.desktop	2010-01-21 21:47:56.000000000 +0100
+@@ -78,6 +78,7 @@
+ Comment[ar]=اعرض محتوى المجلدات (افتراضيات مجلد بيت المستخدم)
+ Comment[bg]=Показва съсдържанието на директория
+ Comment[ca]=Mostra el contingut de les carpetes (per defecte la carpeta inicial de l'usuari)
++Comment[ca@valencia]=Mostra el contingut de les carpetes (per defecte la carpeta inicial de l'usuari)
+ Comment[cs]=Zobrazuje obsah složek (implicitně domovskou složku)
+ Comment[csb]=Wëskrzënianié zamkłosców katalogów (Domôcy katalog brëkòwnika jakno domëszlny)
+ Comment[da]=Vis indholdet af mapper (brugerens hjemmemappe som standard)
